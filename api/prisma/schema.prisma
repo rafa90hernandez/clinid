@@ -1,0 +1,120 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+}
+
+enum PublicLinkStatus {
+  active
+  revoked
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(USER)
+  isDeleted    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  clinicalProfile     ClinicalProfile?
+  publicCredential    PublicCredential?
+  publicLinks         PublicLink[]
+  // === duas relações distintas com ClinicalHistory ===
+  clinicalHistory     ClinicalHistory[]    @relation("OwnerHistory")
+  changedHistory      ClinicalHistory[]    @relation("ChangedByUser")
+  // ===================================================
+  passwordResetTokens PasswordResetToken[]
+  auditLogs           AuditLog[]           @relation("ActorLogs")
+}
+
+model ClinicalProfile {
+  id                    String   @id @default(uuid()) @db.Uuid
+  userId                String   @unique @db.Uuid
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  firstName             String
+  lastName              String
+  sex                   String?
+  emergencyContactName  String?
+  emergencyContactPhone String?
+  bloodType             String?
+  allergies             String[]
+  medications           String[]
+  diseases              String[]
+  surgeries             String[]
+  consentAt             DateTime
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+model PublicCredential {
+  userId    String   @id @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pinHash   String
+  updatedAt DateTime @updatedAt
+}
+
+model PublicLink {
+  id        String           @id @default(uuid()) @db.Uuid
+  userId    String           @db.Uuid
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  slug      String           @unique
+  status    PublicLinkStatus
+  createdAt DateTime         @default(now())
+  revokedAt DateTime?
+
+  @@index([userId])
+}
+
+model ClinicalHistory {
+  id String @id @default(uuid()) @db.Uuid
+
+  // dono do histórico (quem é o "paciente" do perfil)
+  userId String @db.Uuid
+  user   User   @relation("OwnerHistory", fields: [userId], references: [id], onDelete: Cascade)
+
+  snapshot  Json
+  changedAt DateTime @default(now())
+
+  // quem realizou a alteração (opcional)
+  changedBy     String? @db.Uuid
+  changedByUser User?   @relation("ChangedByUser", fields: [changedBy], references: [id])
+
+  note String?
+
+  @@index([userId, changedAt])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, expiresAt])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  actorId   String?  @db.Uuid
+  actor     User?    @relation("ActorLogs", fields: [actorId], references: [id])
+  action    String
+  target    String?
+  ip        String?  @db.Inet
+  details   Json?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([action])
+}
