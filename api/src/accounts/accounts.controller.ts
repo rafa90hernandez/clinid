@@ -20,10 +20,7 @@ export class AccountsController {
 
   @UseGuards(AuthGuard('local'))
   @Post('login')
-  login(
-    @Body() _dto: LoginDto,
-    @Req() req: Request & { user: LocalUser },
-  ) {
+  login(@Body() _dto: LoginDto, @Req() req: Request & { user: LocalUser }) {
     return this.accounts.issueAccessToken(req.user);
   }
 

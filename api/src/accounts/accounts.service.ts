@@ -8,11 +8,12 @@ type LocalUser = { id: string; email: string };
 
 @Injectable()
 export class AccountsService {
-  constructor(private prisma: PrismaService, private jwt: JwtService) {}
+  constructor(
+    private prisma: PrismaService,
+    private jwt: JwtService,
+  ) {}
 
-  async register(
-    dto: RegisterDto,
-  ): Promise<{ id: string; email: string; createdAt: Date }> {
+  async register(dto: RegisterDto): Promise<{ id: string; email: string; createdAt: Date }> {
     const exists = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });

@@ -14,9 +14,7 @@ async function bootstrap() {
     maxAge: 86400,
   });
 
-  app.useGlobalPipes(
-    new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }),
-  );
+  app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }));
 
   await app.listen(process.env.PORT ? Number(process.env.PORT) : 3001, '0.0.0.0');
 }
