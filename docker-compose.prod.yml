@@ -1,0 +1,57 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16
+    container_name: clinid_db
+    environment:
+      POSTGRES_USER: clinid
+      POSTGRES_PASSWORD: clinid
+      POSTGRES_DB: clinid
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    networks: [app]
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: clinid_api
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      DATABASE_URL: postgres://clinid:clinid@db:5432/clinid
+      JWT_SECRET: ${JWT_SECRET:-change-me}
+      WEB_BASE_URL: http://localhost
+    depends_on: [db]
+    networks: [app]
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: clinid_web
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      # IMPORTANTÍSSIMO: front fala com Nginx via /api
+      NEXT_PUBLIC_API_URL: /api
+    depends_on: [api]
+    networks: [app]
+
+  nginx:
+    image: nginx:alpine
+    container_name: clinid_nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./infra/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on: [web, api]
+    networks: [app]
+
+volumes:
+  db_data:
+
+networks:
+  app:
+    driver: bridge
