@@ -7,6 +7,21 @@ import { apiGetAuth, apiPostAuth, apiPost, apiPutAuth } from '@/lib/api';
 import { useRequireAuth } from '@/lib/useRequireAuth';
 import Image from 'next/image';
 
+async function revogarLink() {
+  if (!link) return;
+  try {
+    const token = localStorage.getItem('token') ?? '';
+    const res = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'}/me/public-link/${link.id}/revoke`,
+      { method: 'PATCH', headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!res.ok) throw new Error(await res.text());
+    setLink({ ...link, status: 'revoked' });
+  } catch (e) {
+    alert('Falha ao revogar link');
+  }
+}
+
 type Link = {
   id: string;
   slug: string;
@@ -153,9 +168,8 @@ export default function QRPage() {
               </button>
               {pinMsg && (
                 <div
-                  className={`text-sm ${
-                    pinMsg.includes('sucesso') ? 'text-emerald-700' : 'text-red-700'
-                  }`}
+                  className={`text-sm ${pinMsg.includes('sucesso') ? 'text-emerald-700' : 'text-red-700'
+                    }`}
                 >
                   {pinMsg}
                 </div>
@@ -183,9 +197,8 @@ export default function QRPage() {
               </div>
               {valMsg && (
                 <div
-                  className={`text-sm ${
-                    valMsg.includes('válido') ? 'text-emerald-700' : 'text-red-700'
-                  }`}
+                  className={`text-sm ${valMsg.includes('válido') ? 'text-emerald-700' : 'text-red-700'
+                    }`}
                 >
                   {valMsg}
                 </div>
@@ -196,6 +209,13 @@ export default function QRPage() {
               >
                 Imprimir cartão
               </button>
+              <button
+                onClick={revogarLink}
+                className="w-full mt-2 rounded-lg bg-red-600 hover:bg-red-700 text-white py-2"
+              >
+                Revogar link público
+              </button>
+
             </div>
           </>
         ) : (

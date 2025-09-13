@@ -2,6 +2,19 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 import { Geist, Geist_Mono } from 'next/font/google';
+import BottomNav from '@/components/BottomNav';
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="pt-BR">
+      <body className="min-h-screen bg-brand-50 text-gray-900">
+        <div className="pb-16">{children}</div>
+        <BottomNav />
+      </body>
+    </html>
+  );
+}
+
 
 const geistSans = Geist({
   subsets: ['latin'],

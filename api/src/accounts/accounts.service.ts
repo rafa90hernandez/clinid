@@ -1,43 +1,259 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
-import { RegisterDto } from './dto/register.dto';
-import * as argon2 from 'argon2';
+// api/src/accounts/accounts.service.ts
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import * as argon2 from 'argon2';
+import { randomBytes } from 'crypto';
+import { PrismaService } from '../prisma/prisma.service';
 
-type LocalUser = { id: string; email: string };
+export interface LocalUser {
+  sub: string;   // user.id
+  email: string; // user.email
+}
 
 @Injectable()
 export class AccountsService {
   constructor(
-    private prisma: PrismaService,
-    private jwt: JwtService,
+    private readonly prisma: PrismaService,
+    private readonly jwt: JwtService,
   ) {}
 
-  async register(dto: RegisterDto): Promise<{ id: string; email: string; createdAt: Date }> {
+  /**
+   * Registro de usuário (email único, senha com hash argon2id).
+   * Retorna dados seguros para a resposta.
+   */
+  async register(email: string, password: string) {
     const exists = await this.prisma.user.findUnique({
-      where: { email: dto.email },
+      where: { email },
+      select: { id: true },
     });
-    if (exists) throw new BadRequestException('E-mail já cadastrado');
+    if (exists) {
+      throw new ConflictException('E-mail já cadastrado');
+    }
 
-    const passwordHash = await argon2.hash(dto.password, { type: argon2.argon2id });
+    const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
+
     const user = await this.prisma.user.create({
-      data: { email: dto.email, passwordHash },
+      data: {
+        email,
+        passwordHash,
+        // role padrão USER via default no Prisma
+      },
       select: { id: true, email: true, createdAt: true },
     });
-    return user;
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: user.id,
+        action: 'auth.register',
+        target: `user:${user.id}`,
+        details: { email },
+      },
+    });
+
+    return user; // { id, email, createdAt }
   }
 
-  async validateUser(email: string, password: string): Promise<LocalUser | null> {
-    const user = await this.prisma.user.findUnique({ where: { email } });
-    if (!user || user.isDeleted) return null;
+  /**
+   * Utilizado pelo LocalStrategy (login com email/senha).
+   * Retorna objeto mínimo que será anexado a req.user.
+   */
+  async validateUser(email: string, password: string): Promise<LocalUser> {
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+    });
+    if (!user) {
+      throw new UnauthorizedException('Credenciais inválidas');
+    }
+    if (user.isDeleted) {
+      throw new UnauthorizedException('Conta desativada');
+    }
+
     const ok = await argon2.verify(user.passwordHash, password);
-    if (!ok) return null;
-    return { id: user.id, email: user.email };
+    if (!ok) {
+      await this.prisma.auditLog.create({
+        data: {
+          actorId: user.id,
+          action: 'auth.login.failure',
+          target: `user:${user.id}`,
+          details: { email },
+        },
+      });
+      throw new UnauthorizedException('Credenciais inválidas');
+    }
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: user.id,
+        action: 'auth.login.success',
+        target: `user:${user.id}`,
+        details: { email },
+      },
+    });
+
+    return { sub: user.id, email: user.email };
   }
 
-  async issueAccessToken(user: LocalUser): Promise<{ access_token: string }> {
-    const payload = { sub: user.id, email: user.email };
-    const access_token = await this.jwt.signAsync(payload, { expiresIn: '15m' });
+  /**
+   * Emite JWT para um LocalUser (payload mínimo: sub, email).
+   * Expiração é definida no JwtModule (ex.: 15m).
+   */
+  issueAccessToken(user: LocalUser) {
+    const payload = { sub: user.sub, email: user.email };
+    const access_token = this.jwt.sign(payload);
     return { access_token };
+  }
+
+  /**
+   * Inicia fluxo de "esqueci minha senha".
+   * Sempre retorna ok (para não vazar existência de e-mail).
+   * Em dev, loga a URL de reset.
+   */
+  async forgotPassword(email: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+    });
+
+    // Retorno idempotente para não vazar se e-mail existe ou não.
+    if (!user || user.isDeleted) {
+      return { ok: true };
+    }
+
+    const rawToken = randomBytes(24).toString('base64url'); // curto e seguro
+    const tokenHash = await argon2.hash(rawToken, { type: argon2.argon2id });
+
+    const expiresAt = new Date(Date.now() + 1000 * 60 * 15); // 15 min
+
+    const rec = await this.prisma.passwordResetToken.create({
+      data: {
+        userId: user.id,
+        tokenHash,
+        expiresAt,
+      },
+      select: { id: true, userId: true, expiresAt: true, createdAt: true },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: user.id,
+        action: 'auth.password.forgot.request',
+        target: `user:${user.id}`,
+        details: { email },
+      },
+    });
+
+    // Ambiente de desenvolvimento: loga link de reset
+    const base = process.env.WEB_BASE_URL || 'http://localhost:3000';
+    const resetUrl = `${base}/reset?id=${encodeURIComponent(
+      rec.id,
+    )}&token=${encodeURIComponent(rawToken)}`;
+
+    // eslint-disable-next-line no-console
+    console.log('[DEV] Reset URL:', resetUrl);
+
+    return { ok: true };
+  }
+
+  /**
+   * Conclui reset de senha:
+   * - verifica token (hash) válido/ativo
+   * - exige que a nova senha seja diferente da atual
+   * - invalida o token (usedAt)
+   */
+  async resetPassword(tokenId: string, rawToken: string, newPassword: string) {
+    const token = await this.prisma.passwordResetToken.findUnique({
+      where: { id: tokenId },
+    });
+
+    // Resposta genérica (para não dar pistas)
+    const invalid = () =>
+      new BadRequestException('Token inválido ou expirado');
+
+    if (!token || token.usedAt) throw invalid();
+    if (token.expiresAt.getTime() < Date.now()) throw invalid();
+
+    const ok = await argon2.verify(token.tokenHash, rawToken);
+    if (!ok) throw invalid();
+
+    const user = await this.prisma.user.findUnique({ where: { id: token.userId } });
+    if (!user || user.isDeleted) throw invalid();
+
+    // Nova senha não pode ser igual à antiga
+    const same = await argon2.verify(user.passwordHash, newPassword);
+    if (same) throw new BadRequestException('A nova senha deve ser diferente da atual');
+
+    const newHash = await argon2.hash(newPassword, { type: argon2.argon2id });
+
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: user.id },
+        data: { passwordHash: newHash },
+      }),
+      this.prisma.passwordResetToken.update({
+        where: { id: token.id },
+        data: { usedAt: new Date() },
+      }),
+      this.prisma.auditLog.create({
+        data: {
+          actorId: user.id,
+          action: 'auth.password.reset',
+          target: `user:${user.id}`,
+          details: { tokenId: token.id },
+        },
+      }),
+    ]);
+
+    return { ok: true };
+  }
+
+  /**
+   * Exclui conta do usuário autenticado com confirmação de senha:
+   * - revoga todos os links públicos ativos
+   * - remove PIN público
+   * - invalida tokens de reset pendentes
+   * - marca user como isDeleted (soft delete)
+   */
+  async deleteAccount(userId: string, confirmLoginPassword: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user || user.isDeleted) {
+      throw new BadRequestException('Usuário não encontrado ou já excluído');
+    }
+
+    const ok = await argon2.verify(user.passwordHash, confirmLoginPassword);
+    if (!ok) {
+      throw new UnauthorizedException('Senha de confirmação inválida');
+    }
+
+    await this.prisma.$transaction([
+      // revogar links ativos
+      this.prisma.publicLink.updateMany({
+        where: { userId, status: 'active' },
+        data: { status: 'revoked', revokedAt: new Date() },
+      }),
+      // remover PIN público
+      this.prisma.publicCredential.deleteMany({ where: { userId } }),
+      // tokens de reset pendentes
+      this.prisma.passwordResetToken.deleteMany({ where: { userId } }),
+      // soft delete
+      this.prisma.user.update({
+        where: { id: userId },
+        data: { isDeleted: true },
+      }),
+      // audit
+      this.prisma.auditLog.create({
+        data: {
+          actorId: userId,
+          action: 'account.delete',
+          target: `user:${userId}`,
+          details: { reason: 'user_request' },
+        },
+      }),
+    ]);
+
+    return { ok: true };
   }
 }
