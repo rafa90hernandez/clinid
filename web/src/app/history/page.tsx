@@ -1,202 +1,133 @@
-// web/src/app/history/page.tsx
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
-/** Formatos que podem vir do backend dentro de snapshot */
-type SnapshotRaw = Partial<{
-  first_name: string;
-  last_name: string;
-  blood_type: string;
-  sex: string | null;
-  allergies: string[];
-  medications: string[];
-  diseases: string[];
-  surgeries: string[];
-  emergency_contact_name: string | null;
-  emergency_contact_phone: string | null;
-
-  // camelCase (fallback)
-  firstName: string;
-  lastName: string;
-  bloodType: string;
-  emergencyContactName: string | null;
-  emergencyContactPhone: string | null;
-}>;
-
-type HistoryLatest = {
+type HistoryItem = {
   id: string;
   changedAt: string;
-  note: string | null;
-  snapshot: SnapshotRaw;
-} | null;
-
-type SnapshotNormalized = {
-  first_name: string;
-  last_name: string;
-  sex: string;
-  blood_type: string;
-  allergies: string[];
-  medications: string[];
-  diseases: string[];
-  surgeries: string[];
-  emergency_contact_name: string;
-  emergency_contact_phone: string;
+  changedBy?: string | null;
+  note?: string | null;
+  snapshot: {
+    firstName?: string;
+    lastName?: string;
+    sex?: string | null;
+    bloodType?: string | null;
+    allergies?: string[];
+    medications?: string[];
+    diseases?: string[];
+    surgeries?: string[];
+    emergencyContactName?: string | null;
+    emergencyContactPhone?: string | null;
+    updatedAt?: string;
+  };
 };
 
-function normalizeSnapshot(s: SnapshotRaw | undefined): SnapshotNormalized | null {
-  if (!s) return null;
-
-  const first_name = s.first_name ?? s.firstName ?? '';
-  const last_name = s.last_name ?? s.lastName ?? '';
-  const sex = (s.sex ?? '') || '';
-  const blood_type = s.blood_type ?? s.bloodType ?? '';
-  const allergies = Array.isArray(s.allergies) ? s.allergies : [];
-  const medications = Array.isArray(s.medications) ? s.medications : [];
-  const diseases = Array.isArray(s.diseases) ? s.diseases : [];
-  const surgeries = Array.isArray(s.surgeries) ? s.surgeries : [];
-  const emergency_contact_name =
-    s.emergency_contact_name ?? s.emergencyContactName ?? '';
-  const emergency_contact_phone =
-    s.emergency_contact_phone ?? s.emergencyContactPhone ?? '';
-
-  return {
-    first_name,
-    last_name,
-    sex,
-    blood_type,
-    allergies,
-    medications,
-    diseases,
-    surgeries,
-    emergency_contact_name,
-    emergency_contact_phone,
-  };
-}
-
 export default function HistoryPage() {
-  const [data, setData] = useState<HistoryLatest>(null);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
-  const [changedAtText, setChangedAtText] = useState('');
+  const [items, setItems] = useState<HistoryItem[]>([]);
+  const [latest, setLatest] = useState<HistoryItem | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [err, setErr] = useState('');
+
+  const token = (typeof window !== 'undefined' && localStorage.getItem('token')) || '';
+
+  const needLogin = () => {
+    localStorage.removeItem('token');
+    window.location.href = '/login?next=/history';
+  };
 
   useEffect(() => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-    if (!token) {
-      // sem sessão → login
-      window.location.href = '/login';
-      return;
-    }
+    if (!token) return needLogin();
 
-    let cancelled = false;
     (async () => {
       try {
-        setLoading(true);
-        setErr(null);
-        const res = await fetch(`${API_BASE}/me/history/latest`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (res.status === 401) {
-          window.location.href = '/login';
-          return;
-        }
-        if (!res.ok) throw new Error(await res.text());
+        const [r1, r2] = await Promise.all([
+          fetch(`${API_BASE}/me/history?limit=10`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+          fetch(`${API_BASE}/me/history/latest`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+        ]);
 
-        const json = (await res.json()) as HistoryLatest;
-        if (!cancelled) setData(json);
+        if (r1.status === 401 || r2.status === 401) return needLogin();
+
+        if (!r1.ok) throw new Error(await r1.text());
+        if (!r2.ok) throw new Error(await r2.text());
+
+        setItems((await r1.json()) as HistoryItem[]);
+        const l = (await r2.json()) as HistoryItem | null;
+        setLatest(l);
       } catch (e) {
-        if (!cancelled) {
-          const msg = e instanceof Error ? e.message : 'Falha ao carregar histórico';
-          setErr(msg);
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
+        setErr(e instanceof Error ? e.message : 'Falha ao carregar histórico');
       }
     })();
-
-    return () => {
-      cancelled = true;
-    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Normaliza snapshot para a UI
-  const s = useMemo(() => normalizeSnapshot(data?.snapshot), [data?.snapshot]);
-
-  // Evita hydration mismatch formatando data no cliente e guardando em estado
-  useEffect(() => {
-    if (data?.changedAt) {
-      try {
-        setChangedAtText(new Date(data.changedAt).toLocaleString());
-      } catch {
-        setChangedAtText(data.changedAt);
-      }
-    } else {
-      setChangedAtText('');
-    }
-  }, [data?.changedAt]);
-
   return (
-    <main className="mx-auto max-w-md p-4 print:p-0">
-      <h1 className="text-center text-lg font-semibold mb-3">
-        Histórico do Funcionário
-      </h1>
+    <main className="mx-auto max-w-3xl p-4">
+      <h1 className="text-xl font-semibold mb-2">Histórico de alterações</h1>
+      {err && <p className="text-sm text-red-700 break-all">Erro: {err}</p>}
 
-      {loading && <p>Carregando…</p>}
-
-      {!loading && err && (
-        <p className="text-sm text-red-700 break-words">Erro: {err}</p>
-      )}
-
-      {!loading && !err && !s && (
-        <p className="text-sm text-slate-600">
-          Nenhum histórico encontrado. Preencha seu cadastro clínico primeiro.
-        </p>
-      )}
-
-      {!loading && !err && s && (
-        <div className="space-y-2">
-          <Field label="Nome completo" value={`${s.first_name} ${s.last_name}`.trim()} />
-          <Field label="Sexo" value={s.sex} />
-          <Field label="Tipo sanguíneo" value={s.blood_type} />
-          <Field label="Alergias" value={s.allergies.join(', ')} />
-          <Field label="Medicamentos utilizados" value={s.medications.join(', ')} />
-          <Field label="Doenças" value={s.diseases.join(', ')} />
-          <Field label="Cirurgias realizadas" value={s.surgeries.join(', ')} />
-          <Field label="Contato de emergência" value={s.emergency_contact_name} />
-          <Field label="Celular" value={s.emergency_contact_phone} />
-
-          <p className="text-xs text-slate-500 mt-2">
-            Última atualização: {changedAtText}
-          </p>
-
-          <div className="pt-3 flex gap-2">
-            <button
-              className="w-full rounded bg-slate-200 py-2 text-slate-800"
-              onClick={() => {
-                localStorage.removeItem('token');
-                window.location.href = '/login';
-              }}
-            >
-              Sair
-            </button>
+      <section className="rounded border bg-white p-4 mb-4">
+        <h2 className="font-medium mb-2">Último snapshot</h2>
+        {latest ? (
+          <div className="text-sm">
+            <div>
+              <span className="font-medium">Data:</span>{' '}
+              {new Date(latest.changedAt).toLocaleString()}
+            </div>
+            <div className="break-words">
+              <span className="font-medium">Resumo:</span>{' '}
+              {`${latest.snapshot.firstName ?? ''} ${latest.snapshot.lastName ?? ''}`.trim() ||
+                '(sem nome)'}
+              {latest.snapshot.bloodType ? ` • ${latest.snapshot.bloodType}` : ''}
+            </div>
           </div>
-        </div>
-      )}
-    </main>
-  );
-}
+        ) : (
+          <p className="text-sm text-slate-600">Nenhum registro ainda.</p>
+        )}
+      </section>
 
-function Field({ label, value }: { label: string; value: string }) {
-  return (
-    <label className="block text-sm">
-      <span className="text-slate-600">{label}</span>
-      <input
-        className="mt-1 w-full rounded border bg-white px-3 py-2 text-sm"
-        value={value}
-        readOnly
-      />
-    </label>
+      <section className="rounded border bg-white p-4">
+        <h2 className="font-medium mb-2">Últimas alterações</h2>
+        {items.length === 0 ? (
+          <p className="text-sm text-slate-600">Nenhum item.</p>
+        ) : (
+          <ul className="divide-y">
+            {items.map((it) => (
+              <li key={it.id} className="py-3">
+                <div className="flex items-start justify-between">
+                  <div className="text-sm">
+                    <div>
+                      <span className="font-medium">Data:</span>{' '}
+                      {new Date(it.changedAt).toLocaleString()}
+                    </div>
+                    {it.note && (
+                      <div className="text-slate-600">
+                        <span className="font-medium">Nota:</span> {it.note}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    className="text-xs underline"
+                    onClick={() => setOpenId(openId === it.id ? null : it.id)}
+                  >
+                    {openId === it.id ? 'ocultar' : 'detalhes'}
+                  </button>
+                </div>
+                {openId === it.id && (
+                  <pre className="mt-2 whitespace-pre-wrap break-words text-xs bg-slate-50 p-2 rounded border">
+{JSON.stringify(it.snapshot, null, 2)}
+                  </pre>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </main>
   );
 }

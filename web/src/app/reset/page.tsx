@@ -1,77 +1,135 @@
 'use client';
+
+import { Suspense, useState, FormEvent } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { useState } from 'react';
+import Link from 'next/link';
 import { apiPost } from '@/lib/api';
 
-type ResetResponse = { ok: boolean };
-
-export default function ResetPage() {
-  const params = useSearchParams();
+function ResetFormInner() {
   const router = useRouter();
+  const search = useSearchParams();
 
-  const id = params.get('id') ?? '';
-  const token = params.get('token') ?? '';
+  // lê id e token da query string
+  const id = search.get('id') ?? '';
+  const token = search.get('token') ?? '';
 
-  const [password, setPassword] = useState('');
-  const [confirm, setConfirm] = useState('');
-  const [msg, setMsg] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [newPassword, setNewPassword] = useState<string>('');
+  const [confirm, setConfirm] = useState<string>('');
+  const [loading, setLoading] = useState<boolean>(false);
+  const [err, setErr] = useState<string>('');
+  const [okMsg, setOkMsg] = useState<string>('');
 
-  const valid = id && token && password.length >= 8 && /\d/.test(password) && /[A-Za-z]/.test(password) && password === confirm;
+  const canSubmit =
+    !!id && !!token && newPassword.length >= 8 && newPassword === confirm && !loading;
 
-  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+  async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!valid) return;
-    setMsg(null);
+    if (newPassword !== confirm) {
+      setErr('As senhas não conferem.');
+      return;
+    }
+    setErr('');
+    setOkMsg('');
     setLoading(true);
     try {
-      const res = await apiPost<ResetResponse>('/auth/reset-password', {
+      // Apenas 1 genérico: tipo da resposta (não precisamos tipar a req)
+      await apiPost<unknown>('/auth/reset-password', {
         id,
         token,
-        newPassword: password,
+        newPassword,
       });
-      if (res.ok) {
-        setMsg('Senha redefinida com sucesso! Redirecionando…');
-        setTimeout(() => router.replace('/login'), 1200);
-      } else {
-        setMsg('Não foi possível redefinir a senha.');
-      }
-    } catch (e: any) {
-      setMsg(e.message ?? 'Falha ao redefinir');
+      setOkMsg('Senha redefinida com sucesso. Redirecionando para o login...');
+      setTimeout(() => router.push('/login'), 1500);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Falha ao redefinir senha.';
+      setErr(msg);
     } finally {
       setLoading(false);
     }
   }
 
+  if (!id || !token) {
+    return (
+      <main className="mx-auto max-w-md p-6">
+        <h1 className="text-2xl font-semibold mb-2">Redefinir senha</h1>
+        <p className="text-slate-700">
+          Link inválido ou incompleto. Solicite um novo e-mail de recuperação.
+        </p>
+        <p className="mt-4">
+          <Link href="/login" className="text-emerald-700 underline">
+            Voltar ao login
+          </Link>
+        </p>
+      </main>
+    );
+  }
+
   return (
-    <main className="mx-auto max-w-sm p-6">
-      <h1 className="mb-4 text-2xl font-semibold">Definir nova senha</h1>
+    <main className="mx-auto max-w-md p-6">
+      <h1 className="text-2xl font-semibold mb-2">Definir nova senha</h1>
+      <p className="text-sm text-slate-600 mb-6">
+        Defina uma senha com no mínimo 8 caracteres.
+      </p>
+
       <form onSubmit={onSubmit} className="space-y-4">
-        <input
-          className="w-full rounded border px-3 py-2"
-          type="password"
-          placeholder="Nova senha (mín. 8, letra e número)"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-        />
-        <input
-          className="w-full rounded border px-3 py-2"
-          type="password"
-          placeholder="Confirmar nova senha"
-          value={confirm}
-          onChange={(e) => setConfirm(e.target.value)}
-          required
-        />
+        <div>
+          <label className="block text-sm font-medium mb-1">Nova senha</label>
+          <input
+            type="password"
+            className="w-full rounded border px-3 py-2"
+            placeholder="********"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            minLength={8}
+            required
+            autoComplete="new-password"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium mb-1">Confirmar nova senha</label>
+          <input
+            type="password"
+            className="w-full rounded border px-3 py-2"
+            placeholder="********"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            minLength={8}
+            required
+            autoComplete="new-password"
+          />
+          {confirm.length > 0 && confirm !== newPassword && (
+            <p className="text-xs text-red-700 mt-1">As senhas não conferem.</p>
+          )}
+        </div>
+
         <button
           type="submit"
-          disabled={loading || !valid}
-          className="w-full rounded bg-emerald-600 px-4 py-2 text-white disabled:opacity-60"
+          disabled={!canSubmit}
+          className="w-full rounded bg-emerald-600 text-white px-4 py-2 disabled:opacity-50"
         >
-          {loading ? 'Redefinindo…' : 'Redefinir senha'}
+          {loading ? 'Enviando...' : 'Redefinir senha'}
         </button>
+
+        {err && <p className="text-sm text-red-700 break-all">{err}</p>}
+        {okMsg && <p className="text-sm text-emerald-700">{okMsg}</p>}
       </form>
-      {msg && <p className="mt-3 text-sm text-slate-700">{msg}</p>}
+
+      <p className="text-sm text-slate-600 mt-6">
+        Lembrou a senha?{' '}
+        <Link href="/login" className="text-emerald-700 underline">
+          Voltar ao login
+        </Link>
+      </p>
     </main>
+  );
+}
+
+export default function ResetPage() {
+  // ✅ Coloca o hook dentro de um Suspense boundary
+  return (
+    <Suspense fallback={<main className="p-6">Carregando…</main>}>
+      <ResetFormInner />
+    </Suspense>
   );
 }
