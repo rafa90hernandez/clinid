@@ -41,6 +41,7 @@ services:
       - "3000:3000"
     environment:
       NEXT_PUBLIC_API_URL: http://127.0.0.1:3001
+      NODE_ENV: development 
     volumes:
       - ./web:/usr/src/app
       - /usr/src/app/node_modules

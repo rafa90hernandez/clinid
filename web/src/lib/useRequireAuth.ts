@@ -1,12 +1,14 @@
-// web/src/lib/useRequireAuth.ts
 'use client';
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { isAuthenticated } from './auth';
 
-export function useRequireAuth(redirectTo = '/login') {
+export function useRequireAuth() {
   const router = useRouter();
   useEffect(() => {
-    if (!isAuthenticated()) router.replace(redirectTo);
-  }, [router, redirectTo]);
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    if (!token) {
+      router.replace('/login'); // só manda pro login quando NÃO autenticado
+    }
+    // ✅ não redireciona para /qr em hipótese alguma
+  }, [router]);
 }
