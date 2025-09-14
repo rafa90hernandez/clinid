@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { apiGet, apiPost } from '@/lib/api';
+import { apiGet, apiPost, apiPatch } from '@/lib/api';
 
 type PublicLink = {
   id: string;
@@ -10,36 +10,52 @@ type PublicLink = {
   status: 'active' | 'revoked';
   createdAt: string;
   revokedAt: string | null;
-} | null;
+};
 
 export default function QrManagerPage() {
-  const [link, setLink] = useState<PublicLink>(null);
+  const [link, setLink] = useState<PublicLink | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  const publicBase =
+    typeof window !== 'undefined'
+      ? window.location.origin
+      : process.env.NEXT_PUBLIC_WEB_BASE_URL || 'http://localhost:3000';
+
+  const publicUrl = link ? `${publicBase}/p/${link.slug}` : '';
 
   async function load() {
     setErr(null);
     try {
-      const data = await apiGet<PublicLink>('/me/public-link', { auth: true });
+      const data = await apiGet<PublicLink>('/me/public-link');
       setLink(data);
-    } catch (e) {
+    } catch {
       setErr('Falha ao carregar link público. Faça login novamente.');
       setLink(null);
     }
   }
 
-  useEffect(() => {
-    load();
-  }, []);
-
-  async function createOrRegenerate() {
+  async function generate() {
     setLoading(true);
     setErr(null);
     try {
-      const data = await apiPost<NonNullable<PublicLink>>('/me/public-link', {}, { auth: true });
+      const data = await apiPost<PublicLink>('/me/public-link', {});
       setLink(data);
-    } catch (e) {
+    } catch {
       setErr('Erro ao gerar link.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function regenerate() {
+    setLoading(true);
+    setErr(null);
+    try {
+      const data = await apiPost<PublicLink>('/me/public-link', {});
+      setLink(data);
+    } catch {
+      setErr('Erro ao regerar link.');
     } finally {
       setLoading(false);
     }
@@ -50,101 +66,127 @@ export default function QrManagerPage() {
     setLoading(true);
     setErr(null);
     try {
-      const data = await apiPost<NonNullable<PublicLink>>(
-        `/me/public-link/${link.id}/revoke`,
-        {},
-        { auth: true, method: 'PATCH' }
-      );
+      const data = await apiPatch<PublicLink>(`/me/public-link/${link.id}/revoke`, {});
       setLink(data);
-    } catch (e) {
+    } catch {
       setErr('Erro ao revogar link.');
     } finally {
       setLoading(false);
     }
   }
 
-  const fullPublicUrl = link?.slug ? `/p/${link.slug}` : '';
+  useEffect(() => {
+    load();
+  }, []);
 
   return (
-    <main className="max-w-xl mx-auto p-6 space-y-6">
-      <h1 className="text-2xl font-bold">QR público de emergência</h1>
-      <p className="text-sm text-slate-600">
+    <main className="mx-auto max-w-xl p-6">
+      <h1 className="mb-4 text-2xl font-semibold">QR público de emergência</h1>
+      <p className="mb-6 text-sm text-slate-600">
         Gere um link público (protegido por PIN) para ser acessado via QR Code.
       </p>
 
       {err && (
-        <div className="rounded-md bg-red-50 text-red-700 p-3 text-sm">
+        <div className="mb-4 rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-rose-700">
           {err}
         </div>
       )}
 
-      <section className="rounded-lg border p-4 bg-white space-y-3">
-        <div className="text-sm">
-          <div>
-            <span className="font-medium">Status:</span>{' '}
-            {link ? link.status : '—'}
-          </div>
-          <div>
-            <span className="font-medium">Slug:</span>{' '}
-            {link?.slug ?? '—'}
-          </div>
-          <div className="break-all">
-            <span className="font-medium">URL pública:</span>{' '}
-            {link?.slug ? (
-              <Link href={fullPublicUrl} className="text-blue-600 underline">
-                {fullPublicUrl}
-              </Link>
-            ) : (
-              '—'
-            )}
-          </div>
-          <p className="text-slate-500 mt-2 text-xs">
-            A <b>página pública</b> correta é <code>/p/&lt;slug&gt;</code>. A impressão do cartão está em <code>/qr/print</code>.
-          </p>
+      <div className="mb-6 rounded-lg border bg-white px-4 py-3 shadow-sm">
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-slate-500">Status:</span>
+          <span
+            className={
+              'rounded px-2 py-0.5 text-xs ' +
+              (link?.status === 'active'
+                ? 'bg-green-100 text-green-700'
+                : link
+                ? 'bg-slate-200 text-slate-700'
+                : 'bg-slate-100 text-slate-500')
+            }
+          >
+            {link ? (link.status === 'active' ? 'ativo' : 'revogado') : '—'}
+          </span>
         </div>
 
-        <div className="flex flex-wrap gap-2 pt-2">
-          <button
-            onClick={createOrRegenerate}
-            disabled={loading}
-            className="px-3 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
-          >
-            {link ? 'Regerar' : 'Gerar'}
-          </button>
+        <div className="mt-3 text-sm">
+          <div className="mb-1 text-slate-500">Slug:</div>
+          <div className="font-mono">{link?.slug ?? '—'}</div>
+        </div>
 
-          <button
-            onClick={revoke}
-            disabled={loading || !link || link.status !== 'active'}
-            className="px-3 py-2 rounded-md bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50"
-          >
-            Revogar
-          </button>
-
-          <Link
-            href="/qr/print"
-            className="px-3 py-2 rounded-md bg-slate-200 hover:bg-slate-300 text-slate-900"
-          >
-            Imprimir
-          </Link>
-
-          {link?.slug && (
-            <Link
-              href={fullPublicUrl}
-              className="px-3 py-2 rounded-md bg-emerald-600 text-white hover:bg-emerald-700"
-            >
-              Abrir página pública
-            </Link>
+        <div className="mt-3 text-sm">
+          <div className="mb-1 text-slate-500">URL pública:</div>
+          {link ? (
+            <a href={publicUrl} className="font-mono text-blue-600 underline" target="_blank">
+              {publicUrl}
+            </a>
+          ) : (
+            <span>—</span>
           )}
         </div>
-      </section>
 
-      <section className="text-sm text-slate-600">
-        <ul className="list-disc pl-5 space-y-1">
-          <li>Defina um PIN em <b>Configurar PIN</b> (ou via API <code>/me/pin</code>).</li>
-          <li>Gere o link e escaneie o QR do cartão (ou clique em “Abrir página pública”).</li>
-          <li>Na página <code>/p/&lt;slug&gt;</code> insira o PIN para visualizar seus dados.</li>
-        </ul>
-      </section>
+        <p className="mt-3 text-xs text-slate-500">
+          A página pública é <code>/p/&lt;slug&gt;</code>. A impressão do cartão está em{' '}
+          <code>/qr/print</code>.
+        </p>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {!link && (
+          <button
+            onClick={generate}
+            disabled={loading}
+            className="rounded-lg bg-blue-600 px-4 py-2 text-white disabled:opacity-60"
+          >
+            {loading ? 'Gerando…' : 'Gerar'}
+          </button>
+        )}
+
+        {link?.status === 'active' && (
+          <>
+            <button
+              onClick={regenerate}
+              disabled={loading}
+              className="rounded-lg bg-indigo-600 px-4 py-2 text-white disabled:opacity-60"
+            >
+              {loading ? 'Regerando…' : 'Regerar'}
+            </button>
+
+            <button
+              onClick={revoke}
+              disabled={loading}
+              className="rounded-lg bg-rose-600 px-4 py-2 text-white disabled:opacity-60"
+            >
+              {loading ? 'Revogando…' : 'Revogar'}
+            </button>
+
+            <Link
+              href="/qr/print"
+              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-700 hover:bg-slate-50"
+            >
+              Imprimir
+            </Link>
+
+            <Link
+              href={publicUrl || '#'}
+              target="_blank"
+              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            >
+              Abrir público
+            </Link>
+          </>
+        )}
+
+        {link && link.status === 'revoked' && (
+          <button
+            onClick={generate}
+            disabled={loading}
+            className="rounded-lg bg-blue-600 px-4 py-2 text-white disabled:opacity-60"
+          >
+            {loading ? 'Gerando…' : 'Gerar novo'}
+          </button>
+        )}
+      </div>
     </main>
   );
 }

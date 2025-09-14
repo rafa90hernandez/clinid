@@ -3,11 +3,31 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { apiGet, apiPut, ApiError } from '@/lib/api';
+import { apiGet, apiPut } from '@/lib/api';
 
-/** ===== Tipos ===== */
+/** ---------- Type guards/util ---------- */
+function isApiError(e: unknown): e is { status: number; body?: unknown } {
+  return (
+    typeof e === 'object' &&
+    e !== null &&
+    'status' in e &&
+    typeof (e as { status?: unknown }).status === 'number'
+  );
+}
+
+function extractApiMessage(body: unknown): string | null {
+  if (typeof body === 'string') return body;
+  if (body && typeof body === 'object') {
+    const maybe = body as { message?: unknown; error?: unknown };
+    if (typeof maybe.message === 'string') return maybe.message;
+    if (typeof maybe.error === 'string') return maybe.error;
+  }
+  return null;
+}
+
+/** =================== Tipos =================== */
 type ProfileApiResponse = {
-  // snake_case (retorno possível)
+  // snake_case (possível retorno)
   first_name?: string;
   last_name?: string;
   sex?: string | null;
@@ -19,7 +39,7 @@ type ProfileApiResponse = {
   diseases?: string[];
   surgeries?: string[];
 
-  // camelCase (retorno possível, dependendo de como a API serializa)
+  // camelCase (possível retorno)
   firstName?: string;
   lastName?: string;
   bloodType?: string | null;
@@ -28,7 +48,7 @@ type ProfileApiResponse = {
 };
 
 type UpsertProfileBody = {
-  // ATENÇÃO: a API espera SNAKE_CASE
+  // a API espera SNAKE_CASE
   first_name: string;
   last_name: string;
   sex?: string;
@@ -39,7 +59,7 @@ type UpsertProfileBody = {
   medications: string[];
   diseases: string[];
   surgeries: string[];
-  consent?: boolean; // usado na primeira vez
+  consent?: boolean;
 };
 
 function toList(value: string): string[] {
@@ -56,7 +76,7 @@ function fromList(list?: string[] | null): string {
 export default function ProfilePage() {
   const router = useRouter();
 
-  // Campos do formulário (internamente camelCase para conveniência)
+  // Campos (internamente camelCase)
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [sex, setSex] = useState('');
@@ -86,13 +106,11 @@ export default function ProfilePage() {
       setErr(null);
       try {
         const p = await apiGet<ProfileApiResponse>('/me/profile').catch((e) => {
-          // 404 -> ainda não tem perfil, tudo bem.
-          if (e instanceof ApiError && e.status === 404) return null;
+          if (isApiError(e) && e.status === 404) return null; // sem perfil ainda
           throw e;
         });
 
         if (p) {
-          // aceita snake_case OU camelCase na leitura
           setFirstName(p.firstName ?? p.first_name ?? '');
           setLastName(p.lastName ?? p.last_name ?? '');
           setSex(p.sex ?? '');
@@ -105,7 +123,7 @@ export default function ProfilePage() {
           setSurgeries(fromList(p.surgeries));
         }
       } catch (e) {
-        if (e instanceof ApiError && e.status === 401) {
+        if (isApiError(e) && e.status === 401) {
           localStorage.removeItem('token');
           router.replace('/login');
           return;
@@ -124,7 +142,6 @@ export default function ProfilePage() {
     setOkMsg(null);
 
     try {
-      // MONTA EM snake_case, como o endpoint espera
       const body: UpsertProfileBody = {
         first_name: firstName.trim(),
         last_name: lastName.trim(),
@@ -136,21 +153,17 @@ export default function ProfilePage() {
         medications: toList(medications),
         diseases: toList(diseases),
         surgeries: toList(surgeries),
-        // envie consent true na primeira gravação (mantém compatibilidade)
         consent: consent ? true : undefined,
       };
 
-      await apiPut<unknown, UpsertProfileBody>('/me/profile', body);
+      await apiPut<unknown>('/me/profile', body);
+
       setOkMsg('Perfil salvo com sucesso.');
       setTimeout(() => router.replace('/'), 700);
     } catch (e) {
-      if (e instanceof ApiError) {
-        // tenta exibir mensagem vinda da API (validation pipe, etc.)
-        const msg =
-          (typeof e.body === 'string' && e.body) ||
-          (e.body && (e.body.message || e.body.error)) ||
-          'Erro ao salvar perfil.';
-        setErr(typeof msg === 'string' ? msg : 'Erro ao salvar perfil.');
+      if (isApiError(e)) {
+        const msg = extractApiMessage(e.body);
+        setErr(msg ?? 'Erro ao salvar perfil.');
       } else {
         setErr('Erro ao salvar perfil.');
       }
@@ -186,7 +199,7 @@ export default function ProfilePage() {
             <input
               className="mt-1 w-full rounded-md border px-3 py-2"
               value={firstName}
-              onChange={(e) => setFirstName(e.target.value)}
+              onChange={(ev) => setFirstName(ev.target.value)}
               required
             />
           </label>
@@ -196,7 +209,7 @@ export default function ProfilePage() {
             <input
               className="mt-1 w-full rounded-md border px-3 py-2"
               value={lastName}
-              onChange={(e) => setLastName(e.target.value)}
+              onChange={(ev) => setLastName(ev.target.value)}
               required
             />
           </label>
@@ -206,7 +219,7 @@ export default function ProfilePage() {
             <input
               className="mt-1 w-full rounded-md border px-3 py-2"
               value={sex}
-              onChange={(e) => setSex(e.target.value)}
+              onChange={(ev) => setSex(ev.target.value)}
               placeholder="M"
             />
           </label>
@@ -216,7 +229,7 @@ export default function ProfilePage() {
             <input
               className="mt-1 w-full rounded-md border px-3 py-2"
               value={bloodType}
-              onChange={(e) => setBloodType(e.target.value)}
+              onChange={(ev) => setBloodType(ev.target.value)}
               placeholder="O+"
             />
           </label>
@@ -226,7 +239,7 @@ export default function ProfilePage() {
             <input
               className="mt-1 w-full rounded-md border px-3 py-2"
               value={emergencyName}
-              onChange={(e) => setEmergencyName(e.target.value)}
+              onChange={(ev) => setEmergencyName(ev.target.value)}
               placeholder="Ex.: Maria"
             />
           </label>
@@ -236,7 +249,7 @@ export default function ProfilePage() {
             <input
               className="mt-1 w-full rounded-md border px-3 py-2"
               value={emergencyPhone}
-              onChange={(e) => setEmergencyPhone(e.target.value)}
+              onChange={(ev) => setEmergencyPhone(ev.target.value)}
               placeholder="11999999999"
             />
           </label>
@@ -248,7 +261,7 @@ export default function ProfilePage() {
             <input
               className="mt-1 w-full rounded-md border px-3 py-2"
               value={allergies}
-              onChange={(e) => setAllergies(e.target.value)}
+              onChange={(ev) => setAllergies(ev.target.value)}
               placeholder="Penicilina, Dipirona"
             />
           </label>
@@ -258,7 +271,7 @@ export default function ProfilePage() {
             <input
               className="mt-1 w-full rounded-md border px-3 py-2"
               value={medications}
-              onChange={(e) => setMedications(e.target.value)}
+              onChange={(ev) => setMedications(ev.target.value)}
               placeholder="AAS 100mg"
             />
           </label>
@@ -268,7 +281,7 @@ export default function ProfilePage() {
             <input
               className="mt-1 w-full rounded-md border px-3 py-2"
               value={diseases}
-              onChange={(e) => setDiseases(e.target.value)}
+              onChange={(ev) => setDiseases(ev.target.value)}
               placeholder="Hipertensão, Diabetes"
             />
           </label>
@@ -278,7 +291,7 @@ export default function ProfilePage() {
             <input
               className="mt-1 w-full rounded-md border px-3 py-2"
               value={surgeries}
-              onChange={(e) => setSurgeries(e.target.value)}
+              onChange={(ev) => setSurgeries(ev.target.value)}
               placeholder="Colecistectomia 2017"
             />
           </label>
@@ -289,7 +302,7 @@ export default function ProfilePage() {
             type="checkbox"
             className="h-4 w-4"
             checked={!!consent}
-            onChange={(e) => setConsent(e.target.checked)}
+            onChange={(ev) => setConsent(ev.target.checked)}
           />
           <span className="text-sm">
             Concordo em manter meus dados disponíveis no link público com PIN.

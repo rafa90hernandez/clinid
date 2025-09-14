@@ -23,7 +23,7 @@ export default function LoginPage() {
       localStorage.setItem('token', res.access_token);
       // ✅ após login, sempre vá para o dashboard
       router.replace('/');
-    } catch (err) {
+    } catch {
       setError('Credenciais inválidas');
     } finally {
       setLoading(false);

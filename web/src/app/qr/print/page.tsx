@@ -1,156 +1,157 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
+import Image from 'next/image';
+import Link from 'next/link';
 import QRCode from 'react-qr-code';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+import { apiGet } from '@/lib/api';
+import { useRequireAuth } from '@/lib/useRequireAuth';
 
 type PublicLink = {
   id: string;
   slug: string;
   status: 'active' | 'revoked';
   createdAt: string;
-  revokedAt?: string | null;
+  revokedAt: string | null;
 };
 
-export default function QrPrintPage() {
+export default function PrintEmergencyCardPage() {
+  // garante que o usuário está logado antes de buscar dados
+  const { ready } = useRequireAuth();
+
   const [link, setLink] = useState<PublicLink | null>(null);
-  const [pin, setPin] = useState('');
   const [err, setErr] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // origem do site para montar a URL pública
+  const WEB_ORIGIN =
+    process.env.NEXT_PUBLIC_WEB_ORIGIN?.replace(/\/$/, '') || 'http://localhost:3000';
 
   useEffect(() => {
-  const token = localStorage.getItem('token') ?? '';
-  const goLogin = () => {
-    localStorage.removeItem('token');
-    window.location.href = '/login?next=/qr/print';
-  };
+    if (!ready) return;
+    (async () => {
+      setLoading(true);
+      setErr(null);
+      try {
+        const data = await apiGet<PublicLink>('/me/public-link');
+        setLink(data);
+      } catch {
+        setErr('Erro ao carregar link público. Faça login novamente.');
+        setLink(null);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [ready]);
 
-  if (!token) {
-    goLogin();
-    return;
+  function handlePrint() {
+    if (typeof window !== 'undefined') window.print();
   }
 
-  (async () => {
-    try {
-      const res = await fetch(`${API_BASE}/me/public-link`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+  if (!ready || loading) {
+    return (
+      <main className="p-6">
+        <h1 className="text-xl font-semibold">Imprimir cartão de emergência</h1>
+        <p className="mt-2 text-sm text-slate-600">Carregando…</p>
+      </main>
+    );
+  }
 
-      if (res.status === 401) {
-        goLogin();
-        return;
-      }
+  if (err) {
+    return (
+      <main className="p-6">
+        <h1 className="text-xl font-semibold">Imprimir cartão de emergência</h1>
+        <p className="mt-3 text-sm text-red-600">{err}</p>
+        <div className="mt-6">
+          <Link href="/qr" className="rounded-md border px-4 py-2 text-slate-800">
+            Voltar ao QR
+          </Link>
+        </div>
+      </main>
+    );
+  }
 
-      if (!res.ok) throw new Error(await res.text());
-      const json = (await res.json()) as PublicLink | null;
-      setLink(json);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Falha ao carregar link público');
-    }
-  })();
-}, []);
+  if (!link) {
+    return (
+      <main className="p-6">
+        <h1 className="text-xl font-semibold">Imprimir cartão de emergência</h1>
+        <p className="mt-3 text-sm">
+          Você ainda não possui link público ativo. Gere em <Link className="underline" href="/qr">/qr</Link>.
+        </p>
+      </main>
+    );
+  }
 
-
-  const viewUrl = useMemo(() => {
-    if (!link?.slug) return '';
-    const origin =
-      typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
-    return `${origin}/q/${link.slug}`; // página pública de entrada do PIN
-  }, [link?.slug]);
+  const publicUrl = `${WEB_ORIGIN}/p/${link.slug}`;
 
   return (
-    <main className="mx-auto max-w-md p-4">
-      <h1 className="text-lg font-semibold mb-3">Imprimir cartão de emergência</h1>
+    <main className="p-6">
+      {/* Barra superior (oculta na impressão) */}
+      <div className="no-print mb-6 flex items-center justify-between">
+        <h1 className="text-xl font-semibold">QR Code de Acesso</h1>
+        <div className="flex gap-3">
+          <Link href="/qr" className="rounded-md border px-4 py-2 text-slate-800">
+            Voltar
+          </Link>
+          <button
+            type="button"
+            onClick={handlePrint}
+            className="rounded-md bg-slate-900 px-4 py-2 text-white"
+          >
+            Imprimir
+          </button>
+        </div>
+      </div>
 
-      {err && <p className="text-sm text-red-700 break-words">Erro: {err}</p>}
-      {!link && !err && <p>Carregando…</p>}
+      {/* Cartão (pensado para caber bem na impressão) */}
+      <section
+        className="card mx-auto w-[360px] max-w-full rounded-2xl bg-white p-5 shadow-md print:w-[320px]"
+        aria-label="Cartão de emergência"
+      >
+        <div className="mb-3 flex items-center gap-3">
+          <Image
+            src="/Logo.png"
+            alt="ClinID"
+            width={42}
+            height={42}
+            priority
+            className="h-10 w-10"
+          />
+          <div>
+            <p className="text-xs leading-tight text-slate-500">+ClinID</p>
+            <p className="text-[11px] leading-tight text-slate-500">Soluções emergenciais</p>
+          </div>
+        </div>
 
-      {link && link.status === 'revoked' && (
-        <p className="text-sm text-red-700 mb-3">
-          Este link está <b>revogado</b>. Gere um novo em <code>/qr</code> antes de imprimir.
-        </p>
-      )}
-
-      {link && link.status === 'active' && (
-        <>
-          <div className="rounded-lg border p-4 bg-white print:border-0 print:p-0">
-            <div className="flex flex-col items-center gap-3">
-              {/* LOGO (coloque /public/Logo.png no projeto) */}
-              <img
-                src="/Logo.png"
-                alt="ClinID"
-                className="h-10 print:h-8"
-              />
-
-              {/* QR Code */}
-              {viewUrl && (
-                <div className="bg-white p-2 rounded">
-                  <QRCode value={viewUrl} size={180} />
-                </div>
-              )}
-
-              {/* URL em texto (útil se QR falhar) */}
-              <p className="text-xs text-slate-600 break-all">
-                {viewUrl}
-              </p>
-
-              {/* PIN digitado pelo usuário (aparece na impressão) */}
-              <div className="w-full">
-                <label className="block text-sm">
-                  <span className="text-slate-600">PIN público (6 dígitos)</span>
-                  <input
-                    inputMode="numeric"
-                    pattern="\d{6}"
-                    maxLength={6}
-                    className="mt-1 w-full rounded border px-3 py-2 text-center tracking-widest text-lg"
-                    placeholder="______"
-                    value={pin}
-                    onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                  />
-                </label>
-                <div className="mt-2 text-center">
-                  <span className="text-slate-600 text-sm">PIN:</span>{' '}
-                  <span className="font-mono text-2xl">{pin || '______'}</span>
-                </div>
-              </div>
-
-              <p className="text-[11px] text-slate-500 text-center mt-1">
-                Escaneie o QR e digite o PIN para visualizar as informações clínicas.
-              </p>
-            </div>
+        <div className="flex flex-col items-center">
+          <div className="rounded-xl border p-3">
+            <QRCode value={publicUrl} size={168} />
           </div>
 
-          {/* Controles (escondidos na impressão) */}
-          <div className="mt-4 flex gap-2 print:hidden">
-            <button
-              className="w-full rounded bg-slate-200 py-2"
-              onClick={() => window.history.back()}
-            >
-              Voltar
-            </button>
-            <button
-              className="w-full rounded bg-emerald-600 hover:bg-emerald-700 text-white py-2"
-              onClick={() => window.print()}
-              disabled={!viewUrl}
-            >
-              Imprimir
-            </button>
+          <div className="mt-4 w-full text-center">
+            <p className="text-xs text-slate-600">Acesso público (protegido por PIN)</p>
+            <p className="mt-1 break-all text-sm font-medium">{publicUrl}</p>
           </div>
-        </>
-      )}
 
-      {/* CSS de impressão local à página */}
-      <style jsx global>{`
+          {/* Por segurança, não exibimos o PIN aqui. */}
+          <p className="mt-3 text-xs text-slate-500">
+            Para visualizar, acesse o link e informe seu PIN cadastrado.
+          </p>
+        </div>
+      </section>
+
+      {/* CSS específico de impressão */}
+      <style jsx>{`
         @media print {
-          @page {
-            size: A6 portrait;
-            margin: 6mm;
+          .no-print {
+            display: none !important;
           }
           body {
-            background: #fff !important;
+            background: #ffffff !important;
           }
-          .print\\:hidden {
-            display: none !important;
+          .card {
+            box-shadow: none !important;
+            border: 1px solid #00000020;
           }
         }
       `}</style>
