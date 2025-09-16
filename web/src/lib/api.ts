@@ -1,12 +1,21 @@
-// web/src/lib/api.ts
+// web/src/lib/api.ts (ARQUIVO COMPLETO)
 
-export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+export const API_URL: string = (() => {
+  // Se vier do ambiente, usa o valor informado
+  const envUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
+  if (envUrl && envUrl.length > 0) return envUrl;
+
+  // Padrão seguro: same-origin via NGINX
+  return '/api';
+})();
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 type RequestOpts = {
   /** Por padrão enviamos Authorization: Bearer <token> */
   withAuth?: boolean;
+  /** Headers extras se necessário */
+  headers?: Record<string, string>;
 };
 
 interface ApiError extends Error {
@@ -32,6 +41,7 @@ async function request<T>(
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    ...(opts?.headers ?? {}),
   };
 
   if (withAuth && typeof window !== 'undefined') {
@@ -41,24 +51,31 @@ async function request<T>(
     }
   }
 
-  const res = await fetch(`${API_URL}${path}`, {
+  const url = `${API_URL}${path.startsWith('/') ? path : `/${path}`}`;
+
+  const res = await fetch(url, {
     method,
     headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,
+    // same-origin resolve cookies/CSRF se algum dia usar; ok para NGINX
     credentials: 'include',
+    redirect: 'follow',
   });
 
   if (!res.ok) {
     const raw = await res.text().catch(() => '');
     const data: unknown = parseJsonSafely(raw);
 
-    const message =
-      (typeof data === 'object' &&
-        data !== null &&
-        'message' in data &&
-        typeof (data as { message?: unknown }).message === 'string' &&
-        (data as { message: string }).message) ||
-      `HTTP ${res.status}`;
+    // tenta extrair message do backend
+    let message = `HTTP ${res.status}`;
+    if (
+      typeof data === 'object' &&
+      data !== null &&
+      'message' in data &&
+      typeof (data as { message?: unknown }).message === 'string'
+    ) {
+      message = (data as { message: string }).message;
+    }
 
     const err: ApiError = Object.assign(new Error(message), {
       status: res.status,

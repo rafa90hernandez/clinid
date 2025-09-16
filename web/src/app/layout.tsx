@@ -1,24 +1,21 @@
-import type { Metadata } from 'next';
+// src/app/layout.tsx
 import './globals.css';
-import { ToastProvider } from '@/components/toast';
+import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
   title: 'ClinID',
-  description: 'Compartilhamento de informações clínicas com PIN.',
-  icons: { icon: '/favicon.ico' },
+  description: 'Dashboard',
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="pt-BR" suppressHydrationWarning>
-      <body className="min-h-dvh bg-slate-50 text-slate-900 antialiased">
-        <ToastProvider>{children}</ToastProvider>
+      <body
+        suppressHydrationWarning
+        className="min-h-dvh bg-slate-50 text-slate-900 antialiased"
+      >
+        {children}
       </body>
     </html>
   );
 }
-
