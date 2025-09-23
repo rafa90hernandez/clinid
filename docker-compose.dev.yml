@@ -30,6 +30,7 @@ services:
       - /usr/src/app/node_modules
     command: sh -c "npm install && npx prisma generate && npm run build && node dist/main.js"
 
+
   web:
     build:
       context: ./web
@@ -40,7 +41,8 @@ services:
     ports:
       - "3000:3000"
     environment:
-      NEXT_PUBLIC_API_URL: http://127.0.0.1:3001
+      NEXT_PUBLIC_API_URL: /api
+      NODE_ENV: development 
     volumes:
       - ./web:/usr/src/app
       - /usr/src/app/node_modules

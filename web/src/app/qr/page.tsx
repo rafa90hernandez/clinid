@@ -1,196 +1,192 @@
 'use client';
 
-import Link from 'next/link';
 import { useEffect, useState } from 'react';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+import Link from 'next/link';
+import { apiGet, apiPost, apiPatch } from '@/lib/api';
 
 type PublicLink = {
   id: string;
   slug: string;
   status: 'active' | 'revoked';
   createdAt: string;
-  revokedAt?: string | null;
+  revokedAt: string | null;
 };
 
-function Toast({ msg, onClose }: { msg: string; onClose: () => void }) {
-  if (!msg) return null;
-  return (
-    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 rounded bg-black/80 text-white px-3 py-2 text-sm shadow">
-      {msg}{' '}
-      <button onClick={onClose} className="underline ml-2">
-        ok
-      </button>
-    </div>
-  );
-}
-
-export default function QrPage() {
+export default function QrManagerPage() {
   const [link, setLink] = useState<PublicLink | null>(null);
   const [loading, setLoading] = useState(false);
-  const [toast, setToast] = useState('');
+  const [err, setErr] = useState<string | null>(null);
 
-  const token = (typeof window !== 'undefined' && localStorage.getItem('token')) || '';
+  const publicBase =
+    typeof window !== 'undefined'
+      ? window.location.origin
+      : process.env.NEXT_PUBLIC_WEB_BASE_URL || 'http://localhost:3000';
 
-  const needLogin = () => {
-    localStorage.removeItem('token');
-    window.location.href = '/login?next=/qr';
-  };
+  const publicUrl = link ? `${publicBase}/p/${link.slug}` : '';
 
-  async function fetchLink() {
-    if (!token) return needLogin();
-    setLoading(true);
+  async function load() {
+    setErr(null);
     try {
-      const res = await fetch(`${API_BASE}/me/public-link`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.status === 401) return needLogin();
-      if (!res.ok) throw new Error(await res.text());
-      const json = (await res.json()) as PublicLink | null;
-      setLink(json);
-    } catch (e) {
-      setToast(e instanceof Error ? e.message : 'Falha ao carregar link público');
-    } finally {
-      setLoading(false);
+      const data = await apiGet<PublicLink>('/me/public-link');
+      setLink(data);
+    } catch {
+      setErr('Falha ao carregar link público. Faça login novamente.');
+      setLink(null);
     }
   }
-
-  useEffect(() => {
-    fetchLink();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   async function generate() {
-    if (!token) return needLogin();
     setLoading(true);
+    setErr(null);
     try {
-      const res = await fetch(`${API_BASE}/me/public-link`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.status === 401) return needLogin();
-      if (!res.ok) throw new Error(await res.text());
-      setToast('Link gerado com sucesso');
-      await fetchLink();
-    } catch (e) {
-      setToast(e instanceof Error ? e.message : 'Erro ao gerar link');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function revoke() {
-    if (!token) return needLogin();
-    if (!link?.id) return setToast('Nenhum link ativo para revogar');
-    setLoading(true);
-    try {
-      const res = await fetch(`${API_BASE}/me/public-link/${link.id}/revoke`, {
-        method: 'PATCH',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.status === 401) return needLogin();
-      if (!res.ok) throw new Error(await res.text());
-      setToast('Link revogado');
-      await fetchLink();
-    } catch (e) {
-      setToast(e instanceof Error ? e.message : 'Erro ao revogar link');
+      const data = await apiPost<PublicLink>('/me/public-link', {});
+      setLink(data);
+    } catch {
+      setErr('Erro ao gerar link.');
     } finally {
       setLoading(false);
     }
   }
 
   async function regenerate() {
-    // estratégia simples: se houver ativo, revoga; em seguida gera novo
+    setLoading(true);
+    setErr(null);
     try {
-      if (link?.id && link.status === 'active') {
-        await revoke();
-      }
+      const data = await apiPost<PublicLink>('/me/public-link', {});
+      setLink(data);
+    } catch {
+      setErr('Erro ao regerar link.');
     } finally {
-      await generate();
+      setLoading(false);
     }
   }
 
-  const publicUrl =
-    typeof window !== 'undefined' && link?.slug
-      ? `${window.location.origin}/q/${link.slug}`
-      : '';
+  async function revoke() {
+    if (!link?.id) return;
+    setLoading(true);
+    setErr(null);
+    try {
+      const data = await apiPatch<PublicLink>(`/me/public-link/${link.id}/revoke`, {});
+      setLink(data);
+    } catch {
+      setErr('Erro ao revogar link.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
 
   return (
-    <main className="mx-auto max-w-lg p-4">
-      <h1 className="text-xl font-semibold mb-2">QR público de emergência</h1>
-      <p className="text-sm text-slate-600 mb-4">
+    <main className="mx-auto max-w-xl p-6">
+      <h1 className="mb-4 text-2xl font-semibold">QR público de emergência</h1>
+      <p className="mb-6 text-sm text-slate-600">
         Gere um link público (protegido por PIN) para ser acessado via QR Code.
       </p>
 
-      {/* Estado atual */}
-      <div className="rounded border bg-white p-4 mb-4">
-        {loading && <p>Carregando…</p>}
+      {err && (
+        <div className="mb-4 rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-rose-700">
+          {err}
+        </div>
+      )}
 
-        {!loading && !link && <p>Nenhum link ativo.</p>}
+      <div className="mb-6 rounded-lg border bg-white px-4 py-3 shadow-sm">
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-slate-500">Status:</span>
+          <span
+            className={
+              'rounded px-2 py-0.5 text-xs ' +
+              (link?.status === 'active'
+                ? 'bg-green-100 text-green-700'
+                : link
+                ? 'bg-slate-200 text-slate-700'
+                : 'bg-slate-100 text-slate-500')
+            }
+          >
+            {link ? (link.status === 'active' ? 'ativo' : 'revogado') : '—'}
+          </span>
+        </div>
 
-        {!loading && link && (
-          <div className="space-y-2">
-            <div className="text-sm">
-              <div>
-                <span className="font-medium">Status:</span>{' '}
-                {link.status === 'active' ? (
-                  <span className="text-emerald-700">ativo</span>
-                ) : (
-                  <span className="text-red-700">revogado</span>
-                )}
-              </div>
-              <div>
-                <span className="font-medium">Slug:</span> {link.slug}
-              </div>
-              {publicUrl && (
-                <div className="break-all">
-                  <span className="font-medium">URL:</span> {publicUrl}
-                </div>
-              )}
-            </div>
+        <div className="mt-3 text-sm">
+          <div className="mb-1 text-slate-500">Slug:</div>
+          <div className="font-mono">{link?.slug ?? '—'}</div>
+        </div>
 
-            {link.status === 'active' && publicUrl && (
-              <div className="text-xs text-slate-600">
-                A página pública é <code>/q/{link.slug}</code>. A impressão do cartão está em{' '}
-                <code>/qr/print</code>.
-              </div>
-            )}
-          </div>
+        <div className="mt-3 text-sm">
+          <div className="mb-1 text-slate-500">URL pública:</div>
+          {link ? (
+            <a href={publicUrl} className="font-mono text-blue-600 underline" target="_blank">
+              {publicUrl}
+            </a>
+          ) : (
+            <span>—</span>
+          )}
+        </div>
+
+        <p className="mt-3 text-xs text-slate-500">
+          A página pública é <code>/p/&lt;slug&gt;</code>. A impressão do cartão está em{' '}
+          <code>/qr/print</code>.
+        </p>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {!link && (
+          <button
+            onClick={generate}
+            disabled={loading}
+            className="rounded-lg bg-blue-600 px-4 py-2 text-white disabled:opacity-60"
+          >
+            {loading ? 'Gerando…' : 'Gerar'}
+          </button>
+        )}
+
+        {link?.status === 'active' && (
+          <>
+            <button
+              onClick={regenerate}
+              disabled={loading}
+              className="rounded-lg bg-indigo-600 px-4 py-2 text-white disabled:opacity-60"
+            >
+              {loading ? 'Regerando…' : 'Regerar'}
+            </button>
+
+            <button
+              onClick={revoke}
+              disabled={loading}
+              className="rounded-lg bg-rose-600 px-4 py-2 text-white disabled:opacity-60"
+            >
+              {loading ? 'Revogando…' : 'Revogar'}
+            </button>
+
+            <Link
+              href="/qr/print"
+              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-700 hover:bg-slate-50"
+            >
+              Imprimir
+            </Link>
+
+            <Link
+              href={publicUrl || '#'}
+              target="_blank"
+              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            >
+              Abrir público
+            </Link>
+          </>
+        )}
+
+        {link && link.status === 'revoked' && (
+          <button
+            onClick={generate}
+            disabled={loading}
+            className="rounded-lg bg-blue-600 px-4 py-2 text-white disabled:opacity-60"
+          >
+            {loading ? 'Gerando…' : 'Gerar novo'}
+          </button>
         )}
       </div>
-
-      {/* Ações */}
-      <div className="grid grid-cols-2 gap-2">
-        <button
-          className="rounded bg-emerald-600 text-white py-2 disabled:opacity-50"
-          onClick={generate}
-          disabled={loading}
-        >
-          Gerar
-        </button>
-        <button
-          className="rounded bg-amber-600 text-white py-2 disabled:opacity-50"
-          onClick={regenerate}
-          disabled={loading}
-        >
-          Regerar
-        </button>
-        <button
-          className="rounded bg-red-600 text-white py-2 disabled:opacity-50"
-          onClick={revoke}
-          disabled={loading || !link}
-        >
-          Revogar
-        </button>
-        <Link
-          href="/qr/print"
-          className="rounded bg-slate-200 py-2 text-center disabled:opacity-50"
-        >
-          Imprimir
-        </Link>
-      </div>
-
-      <Toast msg={toast} onClose={() => setToast('')} />
     </main>
   );
 }
