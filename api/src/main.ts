@@ -3,12 +3,15 @@ import { AppModule } from './app.module';
 import helmet from 'helmet';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import cookieParser from 'cookie-parser';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   // Segurança
   app.use(helmet());
+
+  app.use(cookieParser());
 
   // CORS
   const origin = process.env.WEB_BASE_URL || 'http://localhost:3000';
