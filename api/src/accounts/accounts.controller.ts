@@ -1,104 +1,98 @@
-// api/src/accounts/accounts.controller.ts
 import {
   Body,
   Controller,
   Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Post,
   Req,
   Res,
   UseGuards,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
-
-import { AccountsService } from './accounts.service';
-import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { AccountsService, type LocalUser } from './accounts.service';
 import { LocalAuthGuard } from './guards/local-auth.guard';
-
-import { LoginDto } from './dto/login.dto';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RegisterDto } from './dto/register.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
-import { DeleteAccountDto } from './dto/delete-account.dto';
 
-/** Payload mínimo que o LocalAuthGuard coloca em req.user */
-type LocalUser = { sub: string; email: string };
+/** Helper: opções de cookie de acordo com o ambiente */
+function cookieOptsForEnv() {
+  const isProd = process.env.NODE_ENV === 'production';
+  // Se front e API estiverem em origens diferentes em produção, use SameSite=None + Secure
+  const crossSite = process.env.CROSS_SITE_COOKIES === 'true';
 
-@Controller('auth')
+  return {
+    httpOnly: true,
+    path: '/',
+    maxAge: 1000 * 60 * 60 * 8, // 8h
+    sameSite: crossSite ? ('none' as const) : ('lax' as const),
+    secure: crossSite ? true : isProd, // SameSite=None exige secure:true
+  };
+}
+
+@Controller('accounts')
 export class AccountsController {
   constructor(private readonly accounts: AccountsService) {}
 
-  /** Ping simples para ver se o módulo está no ar */
-  @Get('health')
-  health() {
-    return { status: 'ok', now: new Date().toISOString() };
-  }
-
-  /** Cria usuário (somente email/senha) */
   @Post('register')
   async register(@Body() dto: RegisterDto) {
-    // service retorna { id, email, createdAt }
-    return this.accounts.register(dto.email, dto.password);
+    const { email, password } = dto;
+    return this.accounts.register(email, password);
   }
 
-  /**
-   * Login com LocalAuthGuard:
-   * - retorna JSON { access_token }
-   * - seta cookie httpOnly 'auth_token' (para navegação web)
-   */
   @UseGuards(LocalAuthGuard)
   @Post('login')
-  async login(
-    @Body() _dto: LoginDto,
+  @HttpCode(HttpStatus.OK)
+  login(
     @Req() req: Request & { user: LocalUser },
     @Res({ passthrough: true }) res: Response,
   ) {
-    const accessToken = await this.accounts.issueAccessToken(req.user);
+    const token = this.accounts.issueAccessToken(req.user);
+    const opts = cookieOptsForEnv();
 
-    // Define o cookie httpOnly para o navegador
-    res.cookie('auth_token', accessToken, {
-      httpOnly: true,
-      sameSite: 'lax',
-      // Em HTTPS/produção, ative secure
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 dias
-      path: '/',
-      // Se precisar, ajuste domain com base no seu host (ex. '.seu-dominio.com')
-      // domain: new URL(process.env.WEB_BASE_URL ?? 'http://localhost').hostname,
-    });
-
-    // Também devolvemos no corpo (útil para apps móveis, etc.)
-    return { access_token: accessToken };
+    res.cookie('auth_token', token.access_token, opts);
+    return { ok: true };
   }
 
-  /** Retorna os dados do usuário autenticado (sub/email) */
   @UseGuards(JwtAuthGuard)
   @Get('me')
-  async me(@Req() req: Request & { user: LocalUser }) {
-    return { sub: req.user.sub, email: req.user.email };
+  me(@Req() req: Request & { user: LocalUser }) {
+    return this.accounts.me(req.user);
   }
 
-  /** Envia e-mail de recuperação (se habilitado no serviço) */
-  @Post('forgot-password')
-  async forgotPassword(@Body() dto: ForgotPasswordDto) {
+  @Post('forgot')
+  async forgot(@Body() dto: ForgotPasswordDto) {
     return this.accounts.forgotPassword(dto.email);
   }
 
-  /** Troca de senha via token de reset */
-  @Post('reset-password')
-  async resetPassword(@Body() dto: ResetPasswordDto) {
+  @Post('reset')
+  async reset(@Body() dto: ResetPasswordDto) {
     return this.accounts.resetPassword(dto.id, dto.token, dto.newPassword);
   }
 
-  /**
-   * Exclui conta autenticada (soft-delete) mediante confirmação de senha
-   */
   @UseGuards(JwtAuthGuard)
-  @Delete('me/account')
-  async deleteMyAccount(
-    @Body() dto: DeleteAccountDto,
+  @Delete()
+  async deleteAccount(
     @Req() req: Request & { user: LocalUser },
+    @Body('confirmLoginPassword') confirmLoginPassword: string,
   ) {
-    return this.accounts.deleteAccount(req.user.sub, dto.confirmLoginPassword);
+    return this.accounts.deleteAccount(req.user.sub, confirmLoginPassword);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('logout')
+  @HttpCode(HttpStatus.OK)
+  logout(@Res({ passthrough: true }) res: Response) {
+    const opts = cookieOptsForEnv();
+    // usar as mesmas flags ajuda alguns browsers a remover o cookie
+    res.clearCookie('auth_token', {
+      path: opts.path,
+      sameSite: opts.sameSite,
+      secure: opts.secure,
+    });
+    return { ok: true };
   }
 }

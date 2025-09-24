@@ -1,12 +1,14 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { apiGet } from '@/lib/api';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
-
+/* =======================
+   Tipos
+======================= */
 type HistoryItem = {
   id: string;
-  changedAt: string;
+  changedAt: string; // ISO
   changedBy?: string | null;
   note?: string | null;
   snapshot: {
@@ -24,60 +26,90 @@ type HistoryItem = {
   };
 };
 
+/* =======================
+   Helpers
+======================= */
+function isApiError(e: unknown): e is { status: number; body?: unknown } {
+  return (
+    typeof e === 'object' &&
+    e !== null &&
+    'status' in e &&
+    typeof (e as { status?: unknown }).status === 'number'
+  );
+}
+
+function needLogin(next = '/history') {
+  if (typeof window !== 'undefined') {
+    // limpa qualquer resquício legado
+    try {
+      localStorage.removeItem('token');
+    } catch {}
+    window.location.href = `/login?next=${encodeURIComponent(next)}`;
+  }
+}
+
+/* =======================
+   Página
+======================= */
 export default function HistoryPage() {
   const [items, setItems] = useState<HistoryItem[]>([]);
   const [latest, setLatest] = useState<HistoryItem | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
-  const [err, setErr] = useState('');
-
-  const token = (typeof window !== 'undefined' && localStorage.getItem('token')) || '';
-
-  const needLogin = () => {
-    localStorage.removeItem('token');
-    window.location.href = '/login?next=/history';
-  };
+  const [err, setErr] = useState<string>('');
+  const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    if (!token) return needLogin();
-
+    let mounted = true;
     (async () => {
+      setLoading(true);
+      setErr('');
+
       try {
-        const [r1, r2] = await Promise.all([
-          fetch(`${API_BASE}/me/history?limit=10`, {
-            headers: { Authorization: `Bearer ${token}` },
-          }),
-          fetch(`${API_BASE}/me/history/latest`, {
-            headers: { Authorization: `Bearer ${token}` },
-          }),
+        // apiGet retorna { ok, status, data, response }
+        const [listRes, lastRes] = await Promise.all([
+          apiGet<HistoryItem[]>('/me/history?limit=10'),
+          apiGet<HistoryItem | null>('/me/history/latest'),
         ]);
 
-        if (r1.status === 401 || r2.status === 401) return needLogin();
+        if (!mounted) return;
 
-        if (!r1.ok) throw new Error(await r1.text());
-        if (!r2.ok) throw new Error(await r2.text());
+        const list = Array.isArray(listRes.data) ? listRes.data : [];
+        const last = lastRes.data ?? null;
 
-        setItems((await r1.json()) as HistoryItem[]);
-        const l = (await r2.json()) as HistoryItem | null;
-        setLatest(l);
+        setItems(list);
+        setLatest(last);
+        setOpenId(null); // reset painel aberto ao atualizar lista
       } catch (e) {
+        if (isApiError(e) && e.status === 401) {
+          needLogin('/history');
+          return;
+        }
         setErr(e instanceof Error ? e.message : 'Falha ao carregar histórico');
+      } finally {
+        if (mounted) setLoading(false);
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   return (
     <main className="mx-auto max-w-3xl p-4">
-      <h1 className="text-xl font-semibold mb-2">Histórico de alterações</h1>
-      {err && <p className="text-sm text-red-700 break-all">Erro: {err}</p>}
+      <h1 className="mb-2 text-xl font-semibold">Histórico de alterações</h1>
 
-      <section className="rounded border bg-white p-4 mb-4">
-        <h2 className="font-medium mb-2">Último snapshot</h2>
+      {loading && <p className="text-sm text-slate-600">Carregando…</p>}
+      {err && <p className="break-all text-sm text-red-700">Erro: {err}</p>}
+
+      {/* Último snapshot */}
+      <section className="mb-4 rounded border bg-white p-4">
+        <h2 className="mb-2 font-medium">Último snapshot</h2>
         {latest ? (
           <div className="text-sm">
             <div>
               <span className="font-medium">Data:</span>{' '}
-              {new Date(latest.changedAt).toLocaleString()}
+              {latest.changedAt ? new Date(latest.changedAt).toLocaleString() : '-'}
             </div>
             <div className="break-words">
               <span className="font-medium">Resumo:</span>{' '}
@@ -91,8 +123,9 @@ export default function HistoryPage() {
         )}
       </section>
 
+      {/* Lista de alterações */}
       <section className="rounded border bg-white p-4">
-        <h2 className="font-medium mb-2">Últimas alterações</h2>
+        <h2 className="mb-2 font-medium">Últimas alterações</h2>
         {items.length === 0 ? (
           <p className="text-sm text-slate-600">Nenhum item.</p>
         ) : (
@@ -103,7 +136,7 @@ export default function HistoryPage() {
                   <div className="text-sm">
                     <div>
                       <span className="font-medium">Data:</span>{' '}
-                      {new Date(it.changedAt).toLocaleString()}
+                      {it.changedAt ? new Date(it.changedAt).toLocaleString() : '-'}
                     </div>
                     {it.note && (
                       <div className="text-slate-600">
@@ -118,8 +151,9 @@ export default function HistoryPage() {
                     {openId === it.id ? 'ocultar' : 'detalhes'}
                   </button>
                 </div>
+
                 {openId === it.id && (
-                  <pre className="mt-2 whitespace-pre-wrap break-words text-xs bg-slate-50 p-2 rounded border">
+                  <pre className="mt-2 whitespace-pre-wrap break-words rounded border bg-slate-50 p-2 text-xs">
 {JSON.stringify(it.snapshot, null, 2)}
                   </pre>
                 )}

@@ -1,8 +1,10 @@
+// web/src/app/qr/page.tsx
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { apiGet, apiPost, apiPatch } from '@/lib/api';
+import { useRequireAuth } from '@/lib/useRequireAuth';
 
 type PublicLink = {
   id: string;
@@ -12,22 +14,35 @@ type PublicLink = {
   revokedAt: string | null;
 };
 
+// Aceita tanto “puro” quanto “envelopado”
+type ApiBox<T> = { ok: boolean; status: number; data: T | null; response: Response };
+function unwrap<T>(res: T | ApiBox<T>): T | null {
+  if (res && typeof res === 'object' && 'ok' in res && 'data' in res) {
+    return (res as ApiBox<T>).data ?? null;
+  }
+  return (res as T) ?? null;
+}
+
 export default function QrManagerPage() {
+  const { ready } = useRequireAuth(); // garante que só carrega quando autenticado
+
   const [link, setLink] = useState<PublicLink | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const publicBase =
-    typeof window !== 'undefined'
-      ? window.location.origin
-      : process.env.NEXT_PUBLIC_WEB_BASE_URL || 'http://localhost:3000';
+  // Base pública para montar a URL do slug
+  const publicBase = useMemo(() => {
+    if (typeof window !== 'undefined') return window.location.origin;
+    return process.env.NEXT_PUBLIC_WEB_BASE_URL || 'http://localhost:3000';
+  }, []);
 
   const publicUrl = link ? `${publicBase}/p/${link.slug}` : '';
 
   async function load() {
     setErr(null);
     try {
-      const data = await apiGet<PublicLink>('/me/public-link');
+      const res = await apiGet<PublicLink | null>('/me/public-link');
+      const data = unwrap<PublicLink | null>(res);
       setLink(data);
     } catch {
       setErr('Falha ao carregar link público. Faça login novamente.');
@@ -39,7 +54,8 @@ export default function QrManagerPage() {
     setLoading(true);
     setErr(null);
     try {
-      const data = await apiPost<PublicLink>('/me/public-link', {});
+      const res = await apiPost<PublicLink | null>('/me/public-link', {});
+      const data = unwrap<PublicLink | null>(res);
       setLink(data);
     } catch {
       setErr('Erro ao gerar link.');
@@ -48,11 +64,13 @@ export default function QrManagerPage() {
     }
   }
 
+  // “Regerar” = criar um novo (o backend deve invalidar o antigo)
   async function regenerate() {
     setLoading(true);
     setErr(null);
     try {
-      const data = await apiPost<PublicLink>('/me/public-link', {});
+      const res = await apiPost<PublicLink | null>('/me/public-link', {});
+      const data = unwrap<PublicLink | null>(res);
       setLink(data);
     } catch {
       setErr('Erro ao regerar link.');
@@ -66,7 +84,8 @@ export default function QrManagerPage() {
     setLoading(true);
     setErr(null);
     try {
-      const data = await apiPatch<PublicLink>(`/me/public-link/${link.id}/revoke`, {});
+      const res = await apiPatch<PublicLink | null>(`/me/public-link/${link.id}/revoke`, {});
+      const data = unwrap<PublicLink | null>(res);
       setLink(data);
     } catch {
       setErr('Erro ao revogar link.');
@@ -76,8 +95,17 @@ export default function QrManagerPage() {
   }
 
   useEffect(() => {
-    load();
-  }, []);
+    if (!ready) return;
+    void load();
+  }, [ready]);
+
+  if (!ready) {
+    return (
+      <main className="mx-auto max-w-xl p-6">
+        <p>Carregando…</p>
+      </main>
+    );
+  }
 
   return (
     <main className="mx-auto max-w-xl p-6">
@@ -117,7 +145,12 @@ export default function QrManagerPage() {
         <div className="mt-3 text-sm">
           <div className="mb-1 text-slate-500">URL pública:</div>
           {link ? (
-            <a href={publicUrl} className="font-mono text-blue-600 underline" target="_blank">
+            <a
+              href={publicUrl}
+              className="font-mono text-blue-600 underline"
+              target="_blank"
+              rel="noreferrer"
+            >
               {publicUrl}
             </a>
           ) : (

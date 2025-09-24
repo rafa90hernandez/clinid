@@ -1,33 +1,46 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { apiGet } from '@/lib/api';
+import { usePathname, useRouter } from 'next/navigation';
+import { apiGet } from './api';
 
-type Me = { sub: string; email: string };
+type Me = { id?: string; sub?: string; email: string };
 
 export function useRequireAuth() {
   const router = useRouter();
+  const pathname = usePathname();
+
   const [ready, setReady] = useState(false);
+  const [me, setMe] = useState<Me | null>(null);
 
   useEffect(() => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-    if (!token) {
-      router.replace('/login');
-      return;
-    }
+    let cancelled = false;
 
     (async () => {
       try {
-        await apiGet<Me>('/auth/me');
+        // ⬅️ seu apiGet retorna { ok, status, data, response }
+        const { data } = await apiGet<Me>('/accounts/me');
+
+        if (cancelled) return;
+        setMe(data ?? null);
         setReady(true);
       } catch {
-        localStorage.removeItem('token');
-        router.replace('/login');
+        if (cancelled) return;
+        setMe(null);
+        setReady(true);
+
+        // Evita loop quando já está em /login ou /register
+        if (pathname !== '/login' && pathname !== '/register') {
+          const next = encodeURIComponent(pathname || '/');
+          router.replace(`/login?next=${next}`);
+        }
       }
     })();
-  }, [router]);
 
-  // ready === true quando já validou o token.
-  return { ready };
+    return () => {
+      cancelled = true;
+    };
+  }, [router, pathname]);
+
+  return { ready, me };
 }

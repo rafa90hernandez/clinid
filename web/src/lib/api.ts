@@ -1,21 +1,32 @@
-// web/src/lib/api.ts (ARQUIVO COMPLETO)
+// web/src/lib/api.ts
 
+/** Base da API (same-origin + rewrite /api recomendado) */
 export const API_URL: string = (() => {
-  // Se vier do ambiente, usa o valor informado
   const envUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
-  if (envUrl && envUrl.length > 0) return envUrl;
-
-  // Padrão seguro: same-origin via NGINX
-  return '/api';
+  return envUrl && envUrl.length > 0 ? envUrl : '/api';
 })();
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 type RequestOpts = {
-  /** Por padrão enviamos Authorization: Bearer <token> */
-  withAuth?: boolean;
   /** Headers extras se necessário */
   headers?: Record<string, string>;
+  /**
+   * Por padrão enviamos credenciais (cookies) para o backend,
+   * pois a autenticação é via cookie httpOnly.
+   */
+  credentials?: RequestInit['credentials']; // default: 'include'
+  /**
+   * Caso MUITO específico: forçar Authorization Bearer.
+   * Evite usar — sua API já autentica por cookie httpOnly.
+   */
+  bearerToken?: string;
+  /** Corpo já serializado (quando não usar json) */
+  body?: BodyInit | null;
+  /** Se você quiser enviar JSON, use 'json' */
+  json?: unknown;
+  /** Método HTTP (override) */
+  method?: HttpMethod;
 };
 
 interface ApiError extends Error {
@@ -31,79 +42,86 @@ function parseJsonSafely(text: string): unknown {
   }
 }
 
-async function request<T>(
-  method: HttpMethod,
+/** Helper principal de fetch */
+export async function apiRequest<T = unknown>(
   path: string,
-  body?: unknown,
-  opts?: RequestOpts
-): Promise<T> {
-  const withAuth = opts?.withAuth ?? true;
-
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...(opts?.headers ?? {}),
-  };
-
-  if (withAuth && typeof window !== 'undefined') {
-    const token = localStorage.getItem('token');
-    if (token) {
-      headers.Authorization = `Bearer ${token}`;
-    }
-  }
+  opts: RequestOpts = {},
+): Promise<{ ok: boolean; status: number; data: T | null; response: Response }> {
+  const {
+    headers,
+    credentials = 'include',
+    bearerToken,
+    body,
+    json,
+    method,
+  } = opts;
 
   const url = `${API_URL}${path.startsWith('/') ? path : `/${path}`}`;
 
+  const finalHeaders: Record<string, string> = {
+    ...(json ? { 'Content-Type': 'application/json' } : {}),
+    ...(headers ?? {}),
+  };
+
+  if (bearerToken) {
+    finalHeaders.Authorization = `Bearer ${bearerToken}`;
+  }
+
   const res = await fetch(url, {
-    method,
-    headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-    // same-origin resolve cookies/CSRF se algum dia usar; ok para NGINX
-    credentials: 'include',
+    method: method ?? (json ? 'POST' : 'GET'),
+    credentials,
+    headers: finalHeaders,
+    body: json ? JSON.stringify(json) : body,
     redirect: 'follow',
   });
 
-  if (!res.ok) {
-    const raw = await res.text().catch(() => '');
-    const data: unknown = parseJsonSafely(raw);
+  // tenta ler JSON; se falhar, deixa null
+  let data: T | null = null;
+  let raw = '';
+  try {
+    data = (await res.clone().json()) as T;
+  } catch {
+    try {
+      raw = await res.clone().text();
+      data = parseJsonSafely(raw) as T | null;
+    } catch {
+      data = null;
+    }
+  }
 
-    // tenta extrair message do backend
+  if (!res.ok) {
+    // extrai "message" do backend se houver
     let message = `HTTP ${res.status}`;
-    if (
-      typeof data === 'object' &&
-      data !== null &&
-      'message' in data &&
-      typeof (data as { message?: unknown }).message === 'string'
-    ) {
-      message = (data as { message: string }).message;
+    const maybeObj = data as Record<string, unknown> | null;
+    if (maybeObj && typeof maybeObj === 'object') {
+      const m = maybeObj['message'];
+      if (typeof m === 'string' && m.trim().length > 0) {
+        message = m;
+      }
     }
 
     const err: ApiError = Object.assign(new Error(message), {
       status: res.status,
       body: data ?? raw,
     });
-
     throw err;
   }
 
-  if (res.status === 204) {
-    // sem corpo
-    return undefined as unknown as T;
-  }
-
-  return (await res.json()) as T;
+  return { ok: true, status: res.status, data, response: res };
 }
 
-export const apiGet = <T>(path: string, opts?: RequestOpts) =>
-  request<T>('GET', path, undefined, opts);
+/** Atalhos verbosos para ergonomia */
+export const apiGet = <T>(path: string, opts?: Omit<RequestOpts, 'method' | 'json'>) =>
+  apiRequest<T>(path, { ...opts, method: 'GET' });
 
-export const apiPost = <T>(path: string, body: unknown, opts?: RequestOpts) =>
-  request<T>('POST', path, body, opts);
+export const apiPost = <T>(path: string, json?: unknown, opts?: Omit<RequestOpts, 'method'>) =>
+  apiRequest<T>(path, { ...opts, method: 'POST', json });
 
-export const apiPut = <T>(path: string, body: unknown, opts?: RequestOpts) =>
-  request<T>('PUT', path, body, opts);
+export const apiPut = <T>(path: string, json?: unknown, opts?: Omit<RequestOpts, 'method'>) =>
+  apiRequest<T>(path, { ...opts, method: 'PUT', json });
 
-export const apiPatch = <T>(path: string, body: unknown, opts?: RequestOpts) =>
-  request<T>('PATCH', path, body, opts);
+export const apiPatch = <T>(path: string, json?: unknown, opts?: Omit<RequestOpts, 'method'>) =>
+  apiRequest<T>(path, { ...opts, method: 'PATCH', json });
 
-export const apiDelete = <T>(path: string, body?: unknown, opts?: RequestOpts) =>
-  request<T>('DELETE', path, body, opts);
+export const apiDelete = <T>(path: string, json?: unknown, opts?: Omit<RequestOpts, 'method'>) =>
+  apiRequest<T>(path, { ...opts, method: 'DELETE', json });

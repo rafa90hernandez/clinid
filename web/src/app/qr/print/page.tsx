@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import QRCode from 'react-qr-code';
@@ -15,6 +15,15 @@ type PublicLink = {
   revokedAt: string | null;
 };
 
+// Aceita tanto “puro” quanto “envelopado”
+type ApiBox<T> = { ok: boolean; status: number; data: T | null; response: Response };
+function unwrap<T>(res: T | ApiBox<T>): T | null {
+  if (res && typeof res === 'object' && 'ok' in res && 'data' in res) {
+    return (res as ApiBox<T>).data ?? null;
+  }
+  return (res as T) ?? null;
+}
+
 export default function PrintEmergencyCardPage() {
   // garante que o usuário está logado antes de buscar dados
   const { ready } = useRequireAuth();
@@ -24,16 +33,20 @@ export default function PrintEmergencyCardPage() {
   const [loading, setLoading] = useState(true);
 
   // origem do site para montar a URL pública
-  const WEB_ORIGIN =
-    process.env.NEXT_PUBLIC_WEB_ORIGIN?.replace(/\/$/, '') || 'http://localhost:3000';
+  const WEB_ORIGIN = useMemo(() => {
+    if (typeof window !== 'undefined') return window.location.origin.replace(/\/$/, '');
+    return (process.env.NEXT_PUBLIC_WEB_ORIGIN || 'http://localhost:3000').replace(/\/$/, '');
+  }, []);
 
   useEffect(() => {
     if (!ready) return;
+
     (async () => {
       setLoading(true);
       setErr(null);
       try {
-        const data = await apiGet<PublicLink>('/me/public-link');
+        const res = await apiGet<PublicLink | null>('/me/public-link');
+        const data = unwrap<PublicLink | null>(res);
         setLink(data);
       } catch {
         setErr('Erro ao carregar link público. Faça login novamente.');
@@ -76,7 +89,11 @@ export default function PrintEmergencyCardPage() {
       <main className="p-6">
         <h1 className="text-xl font-semibold">Imprimir cartão de emergência</h1>
         <p className="mt-3 text-sm">
-          Você ainda não possui link público ativo. Gere em <Link className="underline" href="/qr">/qr</Link>.
+          Você ainda não possui link público ativo. Gere em{' '}
+          <Link className="underline" href="/qr">
+            /qr
+          </Link>
+          .
         </p>
       </main>
     );
@@ -110,7 +127,7 @@ export default function PrintEmergencyCardPage() {
       >
         <div className="mb-3 flex items-center gap-3">
           <Image
-            src="/Logo.png"
+            src="/logo.png"
             alt="ClinID"
             width={42}
             height={42}

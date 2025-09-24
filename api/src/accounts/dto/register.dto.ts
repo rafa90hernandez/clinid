@@ -1,10 +1,10 @@
-import { IsEmail, IsString, MinLength, Matches } from 'class-validator';
+import { IsEmail, IsString, MinLength } from 'class-validator';
 
 export class RegisterDto {
-  @IsEmail() email: string;
+  @IsEmail()
+  email!: string;
 
   @IsString()
-  @MinLength(8)
-  @Matches(/^(?=.*[A-Za-z])(?=.*\d).+$/, { message: 'Senha deve conter letra e número' })
-  password: string;
+  @MinLength(6)
+  password!: string;
 }

@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  BadRequestException,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { randomBytes, randomUUID } from 'crypto';
@@ -78,10 +74,7 @@ export class PublicLinksService {
         break;
       } catch (e: unknown) {
         // colisão de slug (unique constraint)
-        if (
-          e instanceof Prisma.PrismaClientKnownRequestError &&
-          e.code === 'P2002'
-        ) {
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
           continue;
         }
         throw e;
@@ -156,9 +149,9 @@ export class PublicLinksService {
   }
 
   /** (Opcional) Lista todos os links do usuário, ordenados por criação. */
-  async listByUser(userId: string): Promise<
-    Array<Pick<PublicLinkView, 'id' | 'slug' | 'status' | 'createdAt' | 'revokedAt'>>
-  > {
+  async listByUser(
+    userId: string,
+  ): Promise<Array<Pick<PublicLinkView, 'id' | 'slug' | 'status' | 'createdAt' | 'revokedAt'>>> {
     return this.prisma.publicLink.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },

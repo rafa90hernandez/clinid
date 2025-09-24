@@ -1,3 +1,4 @@
+// web/src/app/page.tsx
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -5,10 +6,15 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import BottomNav from '@/components/BottomNav';
 import { Logo } from '@/components/logo';
-import { apiGet } from '@/lib/api';
+import { apiGet, apiPost } from '@/lib/api';
 import { useRequireAuth } from '@/lib/useRequireAuth';
 
-type Me = { sub: string; email: string };
+type Me = {
+  id: string;
+  email: string;
+  role?: string | null;
+  createdAt?: string;
+};
 
 type Profile = {
   firstName?: string;
@@ -16,7 +22,7 @@ type Profile = {
   bloodType?: string | null;
   emergencyContactName?: string | null;
   emergencyContactPhone?: string | null;
-};
+} | null;
 
 type PublicLink = {
   id: string;
@@ -24,7 +30,7 @@ type PublicLink = {
   status: 'active' | 'revoked';
   createdAt: string;
   revokedAt: string | null;
-};
+} | null;
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -33,8 +39,8 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [me, setMe] = useState<Me | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [link, setLink] = useState<PublicLink | null>(null);
+  const [profile, setProfile] = useState<Profile>(null);
+  const [link, setLink] = useState<PublicLink>(null);
 
   useEffect(() => {
     if (!ready) return;
@@ -45,16 +51,17 @@ export default function DashboardPage() {
         setLoading(true);
         setError(null);
 
+        // use SEMPRE .data no resultado das helpers api*
         const [meRes, profileRes, linkRes] = await Promise.all([
-          apiGet<Me>('/auth/me'),
+          apiGet<Me>('/accounts/me'),
           apiGet<Profile>('/me/profile'),
           apiGet<PublicLink>('/me/public-link'),
         ]);
 
         if (cancelled) return;
-        setMe(meRes);
-        setProfile(profileRes);
-        setLink(linkRes);
+        setMe(meRes.data);
+        setProfile(profileRes.data);
+        setLink(linkRes.data);
       } catch {
         if (!cancelled) setError('Falha ao carregar dados. Faça login novamente.');
       } finally {
@@ -69,16 +76,31 @@ export default function DashboardPage() {
 
   if (!ready) return <main className="p-6">Carregando…</main>;
 
+  async function handleLogout() {
+    try {
+      await apiPost<unknown>('/accounts/logout', {});
+    } catch {
+      // ok ignorar
+    } finally {
+      localStorage.removeItem('token');
+      router.push('/login');
+    }
+  }
+
+  const publicUrl =
+    link && typeof window !== 'undefined'
+      ? `${window.location.origin}/q/${link.slug}`
+      : link
+      ? `/q/${link.slug}`
+      : '';
+
   return (
     <main className="p-6 pb-24">
       <header className="mb-6 flex items-center justify-between">
         <Logo />
         <button
           className="rounded-md border px-3 py-1 text-sm"
-          onClick={() => {
-            localStorage.removeItem('token');
-            router.push('/login');
-          }}
+          onClick={handleLogout}
         >
           Sair
         </button>
@@ -90,7 +112,10 @@ export default function DashboardPage() {
 
       {error && (
         <div className="mb-4 rounded-md bg-red-50 p-3 text-red-700">
-          {error} <Link className="underline" href="/login">Ir para login</Link>
+          {error}{' '}
+          <Link className="underline" href="/login">
+            Ir para login
+          </Link>
         </div>
       )}
 
@@ -114,18 +139,23 @@ export default function DashboardPage() {
           </section>
 
           <section className="rounded-xl bg-white p-4 shadow">
-            <h2 className="mb-2 font-medium">Acesso público</h2>
+            <div className="mb-2 flex items-center justify-between">
+              <h2 className="font-medium">Acesso público</h2>
+              {/* ✅ Botão/Link de Gerar/ Gerenciar QR Code sempre visível */}
+              <Link
+                href="/qr"
+                className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm text-white hover:bg-emerald-700"
+              >
+                {link ? 'Gerenciar QR Code' : 'Gerar QR Code'}
+              </Link>
+            </div>
+
             {link ? (
               <div className="text-sm">
                 <p>Status: {link.status}</p>
                 <p>Slug: {link.slug}</p>
-                <p className="truncate">
-                  URL:{' '}
-                  {typeof window !== 'undefined'
-                    ? `${window.location.origin}/q/${link.slug}`
-                    : `/q/${link.slug}`}
-                </p>
-                <div className="mt-2 flex gap-3">
+                <p className="truncate">URL: {publicUrl}</p>
+                <div className="mt-2 flex flex-wrap gap-3">
                   <Link className="text-blue-600 underline" href={`/q/${link.slug}`}>
                     Ver página pública
                   </Link>
@@ -135,7 +165,9 @@ export default function DashboardPage() {
                 </div>
               </div>
             ) : (
-              <p className="text-sm text-slate-600">Nenhum link público gerado ainda.</p>
+              <p className="text-sm text-slate-600">
+                Nenhum link público gerado ainda. Clique em <b>Gerar QR Code</b> para criar.
+              </p>
             )}
           </section>
         </div>

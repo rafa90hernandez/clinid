@@ -1,13 +1,21 @@
 // src/app/layout.tsx
 import './globals.css';
 import type { Metadata } from 'next';
+import type { ReactNode } from 'react';
 
 export const metadata: Metadata = {
   title: 'ClinID',
   description: 'Dashboard',
+  // opcional: ajuda alguns UAs a ajustar componentes nativos
+  metadataBase: new URL('http://localhost:3000'),
+  other: { 'color-scheme': 'light' },
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+type RootLayoutProps = {
+  children: ReactNode;
+};
+
+export default function RootLayout({ children }: RootLayoutProps) {
   return (
     <html lang="pt-BR" suppressHydrationWarning>
       <body

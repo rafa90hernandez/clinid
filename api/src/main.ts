@@ -1,29 +1,36 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import helmet from 'helmet';
+import helmet from 'helmet'; // default import
+import cookieParser from 'cookie-parser'; // default import
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import cookieParser from 'cookie-parser';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // Usaremos enableCors abaixo com opções explícitas
+  const app = await NestFactory.create(AppModule, { cors: false });
 
-  // Segurança
+  // Middlewares antes das rotas
+  app.use(cookieParser());
   app.use(helmet());
 
-  app.use(cookieParser());
-
-  // CORS
+  // CORS (cookies httpOnly exigem credentials: true e origin explícito)
   const origin = process.env.WEB_BASE_URL || 'http://localhost:3000';
   app.enableCors({
     origin,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+    exposedHeaders: ['Content-Disposition'],
   });
 
-  // Validação
-  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+  // Validação global
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      transform: true,
+      forbidUnknownValues: false,
+    }),
+  );
 
   // Swagger
   const config = new DocumentBuilder()
@@ -38,7 +45,7 @@ async function bootstrap() {
     swaggerOptions: { persistAuthorization: true },
   });
 
-  // Ouvir em 0.0.0.0 para acesso via NGINX/containers
+  // Escutar em 0.0.0.0 (containers/nginx)
   const port = Number(process.env.PORT || 3001);
   const host = '0.0.0.0';
   await app.listen(port, host);

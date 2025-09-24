@@ -2,8 +2,13 @@
 const nextConfig = {
   async rewrites() {
     return [
-      { source: '/api/:path*', destination: 'http://127.0.0.1:3001/:path*' },
+      {
+        // tudo que começar com /api vai para o serviço da API no compose
+        source: '/api/:path*',
+        destination: 'http://api:3001/:path*',
+      },
     ];
   },
 };
+
 module.exports = nextConfig;

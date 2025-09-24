@@ -4,6 +4,7 @@ import {
   ConflictException,
   Injectable,
   UnauthorizedException,
+  Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
@@ -11,9 +12,16 @@ import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 
 export interface LocalUser {
-  sub: string;   // user.id
+  sub: string; // user.id
   email: string; // user.email
 }
+
+export type PublicUser = {
+  id: string;
+  email: string;
+  role: string | null;
+  createdAt: Date;
+};
 
 @Injectable()
 export class AccountsService {
@@ -22,10 +30,7 @@ export class AccountsService {
     private readonly jwt: JwtService,
   ) {}
 
-  /**
-   * Registro de usuário (email único, senha com hash argon2id).
-   * Retorna dados seguros para a resposta.
-   */
+  /** Registro (email único, hash argon2id). */
   async register(email: string, password: string) {
     const exists = await this.prisma.user.findUnique({
       where: { email },
@@ -38,11 +43,7 @@ export class AccountsService {
     const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
 
     const user = await this.prisma.user.create({
-      data: {
-        email,
-        passwordHash,
-        // role padrão USER via default no Prisma
-      },
+      data: { email, passwordHash },
       select: { id: true, email: true, createdAt: true },
     });
 
@@ -58,20 +59,11 @@ export class AccountsService {
     return user; // { id, email, createdAt }
   }
 
-  /**
-   * Utilizado pelo LocalStrategy (login com email/senha).
-   * Retorna objeto mínimo que será anexado a req.user.
-   */
+  /** Login com email/senha → retorna payload mínimo para req.user. */
   async validateUser(email: string, password: string): Promise<LocalUser> {
-    const user = await this.prisma.user.findUnique({
-      where: { email },
-    });
-    if (!user) {
-      throw new UnauthorizedException('Credenciais inválidas');
-    }
-    if (user.isDeleted) {
-      throw new UnauthorizedException('Conta desativada');
-    }
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user) throw new UnauthorizedException('Credenciais inválidas');
+    if (user.isDeleted) throw new UnauthorizedException('Conta desativada');
 
     const ok = await argon2.verify(user.passwordHash, password);
     if (!ok) {
@@ -98,10 +90,7 @@ export class AccountsService {
     return { sub: user.id, email: user.email };
   }
 
-  /**
-   * Emite JWT para um LocalUser (payload mínimo: sub, email).
-   * Expiração é definida no JwtModule (ex.: 15m).
-   */
+  /** Emite JWT (expiração via JwtModule). */
   issueAccessToken(user: LocalUser) {
     const payload = { sub: user.sub, email: user.email };
     const access_token = this.jwt.sign(payload);
@@ -109,31 +98,20 @@ export class AccountsService {
   }
 
   /**
-   * Inicia fluxo de "esqueci minha senha".
-   * Sempre retorna ok (para não vazar existência de e-mail).
-   * Em dev, loga a URL de reset.
+   * Esqueci minha senha:
+   * - sempre retorna { ok: true } (não vaza existência)
+   * - gera token curto, salva hash e loga URL em dev
    */
   async forgotPassword(email: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { email },
-    });
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user || user.isDeleted) return { ok: true };
 
-    // Retorno idempotente para não vazar se e-mail existe ou não.
-    if (!user || user.isDeleted) {
-      return { ok: true };
-    }
-
-    const rawToken = randomBytes(24).toString('base64url'); // curto e seguro
+    const rawToken = randomBytes(24).toString('base64url');
     const tokenHash = await argon2.hash(rawToken, { type: argon2.argon2id });
-
     const expiresAt = new Date(Date.now() + 1000 * 60 * 15); // 15 min
 
     const rec = await this.prisma.passwordResetToken.create({
-      data: {
-        userId: user.id,
-        tokenHash,
-        expiresAt,
-      },
+      data: { userId: user.id, tokenHash, expiresAt },
       select: { id: true, userId: true, expiresAt: true, createdAt: true },
     });
 
@@ -146,32 +124,29 @@ export class AccountsService {
       },
     });
 
-    // Ambiente de desenvolvimento: loga link de reset
     const base = process.env.WEB_BASE_URL || 'http://localhost:3000';
     const resetUrl = `${base}/reset?id=${encodeURIComponent(
       rec.id,
     )}&token=${encodeURIComponent(rawToken)}`;
 
-    // eslint-disable-next-line no-console
-    console.log('[DEV] Reset URL:', resetUrl);
+    // Loga em dev
+    Logger.log(`[DEV] Reset URL: ${resetUrl}`, 'PasswordReset');
 
     return { ok: true };
   }
 
   /**
-   * Conclui reset de senha:
-   * - verifica token (hash) válido/ativo
-   * - exige que a nova senha seja diferente da atual
-   * - invalida o token (usedAt)
+   * Reset de senha:
+   * - valida token/expiração/uso
+   * - impede senha igual
+   * - invalida token
    */
   async resetPassword(tokenId: string, rawToken: string, newPassword: string) {
     const token = await this.prisma.passwordResetToken.findUnique({
       where: { id: tokenId },
     });
 
-    // Resposta genérica (para não dar pistas)
-    const invalid = () =>
-      new BadRequestException('Token inválido ou expirado');
+    const invalid = () => new BadRequestException('Token inválido ou expirado');
 
     if (!token || token.usedAt) throw invalid();
     if (token.expiresAt.getTime() < Date.now()) throw invalid();
@@ -182,7 +157,6 @@ export class AccountsService {
     const user = await this.prisma.user.findUnique({ where: { id: token.userId } });
     if (!user || user.isDeleted) throw invalid();
 
-    // Nova senha não pode ser igual à antiga
     const same = await argon2.verify(user.passwordHash, newPassword);
     if (same) throw new BadRequestException('A nova senha deve ser diferente da atual');
 
@@ -210,11 +184,29 @@ export class AccountsService {
     return { ok: true };
   }
 
+  /** Usado pela JwtStrategy.validate(payload.sub) */
+  async findPublicById(id: string): Promise<PublicUser | null> {
+    return this.prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        createdAt: true,
+      },
+    });
+  }
+
+  /** Helper para endpoints autenticados */
+  async me(local: LocalUser): Promise<PublicUser | null> {
+    return this.findPublicById(local.sub);
+  }
+
   /**
-   * Exclui conta do usuário autenticado com confirmação de senha:
-   * - revoga todos os links públicos ativos
-   * - remove PIN público
-   * - invalida tokens de reset pendentes
+   * Exclui conta:
+   * - revoga links públicos
+   * - remove PIN
+   * - apaga tokens de reset
    * - marca user como isDeleted (soft delete)
    */
   async deleteAccount(userId: string, confirmLoginPassword: string) {
@@ -224,26 +216,19 @@ export class AccountsService {
     }
 
     const ok = await argon2.verify(user.passwordHash, confirmLoginPassword);
-    if (!ok) {
-      throw new UnauthorizedException('Senha de confirmação inválida');
-    }
+    if (!ok) throw new UnauthorizedException('Senha de confirmação inválida');
 
     await this.prisma.$transaction([
-      // revogar links ativos
       this.prisma.publicLink.updateMany({
         where: { userId, status: 'active' },
         data: { status: 'revoked', revokedAt: new Date() },
       }),
-      // remover PIN público
       this.prisma.publicCredential.deleteMany({ where: { userId } }),
-      // tokens de reset pendentes
       this.prisma.passwordResetToken.deleteMany({ where: { userId } }),
-      // soft delete
       this.prisma.user.update({
         where: { id: userId },
         data: { isDeleted: true },
       }),
-      // audit
       this.prisma.auditLog.create({
         data: {
           actorId: userId,

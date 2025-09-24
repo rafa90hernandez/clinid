@@ -3,8 +3,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 export function setupSwagger(app: INestApplication) {
   // habilite em dev por padrão; em prod só se SWAGGER_ENABLED=true
-  const enable =
-    process.env.NODE_ENV !== 'production' || process.env.SWAGGER_ENABLED === 'true';
+  const enable = process.env.NODE_ENV !== 'production' || process.env.SWAGGER_ENABLED === 'true';
 
   if (!enable) return;
 

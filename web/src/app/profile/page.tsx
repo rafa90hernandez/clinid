@@ -1,327 +1,515 @@
+// web/src/app/profile/page.tsx
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useMemo, useState } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { apiGet, apiPut } from '@/lib/api';
+import { useRequireAuth } from '@/lib/useRequireAuth';
+import BottomNav from '@/components/BottomNav';
 
-/** ---------- Type guards/util ---------- */
-function isApiError(e: unknown): e is { status: number; body?: unknown } {
-  return (
-    typeof e === 'object' &&
-    e !== null &&
-    'status' in e &&
-    typeof (e as { status?: unknown }).status === 'number'
-  );
-}
+/* =======================
+   Tipos / Constantes
+======================= */
+const SEX_OPTIONS = ['M', 'F'] as const;
+type SexOption = (typeof SEX_OPTIONS)[number] | '';
 
-function extractApiMessage(body: unknown): string | null {
-  if (typeof body === 'string') return body;
-  if (body && typeof body === 'object') {
-    const maybe = body as { message?: unknown; error?: unknown };
-    if (typeof maybe.message === 'string') return maybe.message;
-    if (typeof maybe.error === 'string') return maybe.error;
-  }
-  return null;
-}
+const BLOOD_TYPES = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'] as const;
+type BloodTypeOption = (typeof BLOOD_TYPES)[number] | '';
 
-/** =================== Tipos =================== */
-type ProfileApiResponse = {
-  // snake_case (possível retorno)
-  first_name?: string;
-  last_name?: string;
-  sex?: string | null;
-  blood_type?: string | null;
-  emergency_contact_name?: string | null;
-  emergency_contact_phone?: string | null;
-  allergies?: string[];
-  medications?: string[];
-  diseases?: string[];
-  surgeries?: string[];
+const EMPTY_SEX: SexOption = '' as const;
+const EMPTY_BLOOD: BloodTypeOption = '' as const;
 
-  // camelCase (possível retorno)
-  firstName?: string;
-  lastName?: string;
-  bloodType?: string | null;
+type ListItem = string;
+
+type ProfileResponse = {
+  // Identidade
+  name?: string | null;
+  firstName?: string | null; // algumas APIs retornam separado
+  lastName?: string | null;
+  cpf?: string | null;
+
+  // Campos clínicos
+  sex?: 'M' | 'F' | null;
+  bloodType?: (typeof BLOOD_TYPES)[number] | null;
+  allergies?: string[] | null;
+  medications?: string[] | null;
+  diseases?: string[] | null;
+  surgeries?: string[] | null;
   emergencyContactName?: string | null;
   emergencyContactPhone?: string | null;
 };
 
-type UpsertProfileBody = {
-  // a API espera SNAKE_CASE
-  first_name: string;
-  last_name: string;
-  sex?: string;
-  blood_type?: string;
-  emergency_contact_name?: string;
-  emergency_contact_phone?: string;
-  allergies: string[];
-  medications: string[];
-  diseases: string[];
-  surgeries: string[];
-  consent?: boolean;
-};
-
-function toList(value: string): string[] {
-  return value
-    .split(',')
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
+/* =======================
+   Utils
+======================= */
+function onlyDigits(s: string) {
+  return s.replace(/\D/g, '');
+}
+function formatPhoneBR(raw: string) {
+  // (DD) 9 9999-9999
+  const d = onlyDigits(raw).slice(0, 11);
+  const dd = d.slice(0, 2);
+  const nine = d.slice(2, 3);
+  const p1 = d.slice(3, 7);
+  const p2 = d.slice(7, 11);
+  if (d.length <= 2) return `(${dd}`;
+  if (d.length === 3) return `(${dd}) ${nine}`;
+  if (d.length <= 7) return `(${dd}) ${nine} ${p1}`;
+  return `(${dd}) ${nine} ${p1}-${p2}`;
+}
+function cpfLast2Masked(cpf: string | null | undefined): string {
+  const digits = onlyDigits(cpf ?? '');
+  if (digits.length !== 11) return 'XXX.XXX.XXX-**';
+  const last2 = digits.slice(-2);
+  return `XXX.XXX.XXX-${last2}`;
+}
+function isSex(v: unknown): v is Exclude<SexOption, ''> {
+  return v === 'M' || v === 'F';
+}
+function isBloodType(v: unknown): v is Exclude<BloodTypeOption, ''> {
+  return typeof v === 'string' && (BLOOD_TYPES as readonly string[]).includes(v);
+}
+function splitFullName(full: string): { first: string; last: string } {
+  const parts = full.trim().split(/\s+/);
+  if (parts.length === 0) return { first: '', last: '' };
+  if (parts.length === 1) return { first: parts[0], last: '' };
+  return { first: parts[0], last: parts.slice(1).join(' ') };
 }
 
-function fromList(list?: string[] | null): string {
-  return (list ?? []).join(', ');
-}
-
+/* =======================
+   Página
+======================= */
 export default function ProfilePage() {
   const router = useRouter();
-
-  // Campos (internamente camelCase)
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
-  const [sex, setSex] = useState('');
-  const [bloodType, setBloodType] = useState('');
-  const [emergencyName, setEmergencyName] = useState('');
-  const [emergencyPhone, setEmergencyPhone] = useState('');
-  const [allergies, setAllergies] = useState('');
-  const [medications, setMedications] = useState('');
-  const [diseases, setDiseases] = useState('');
-  const [surgeries, setSurgeries] = useState('');
-  const [consent, setConsent] = useState(true);
+  const { ready } = useRequireAuth();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
 
+  // somente leitura
+  const [name, setName] = useState('');
+  const [cpfMasked, setCpfMasked] = useState('');
+
+  // Também manter first/last em memória para enviar no PUT
+  const [firstNameRO, setFirstNameRO] = useState<string>(''); // read-only (vindos da API)
+  const [lastNameRO, setLastNameRO] = useState<string>('');
+
+  // seletores
+  const [sex, setSex] = useState<SexOption>(EMPTY_SEX);
+  const [bloodType, setBloodType] = useState<BloodTypeOption>(EMPTY_BLOOD);
+
+  // listas
+  const [allergies, setAllergies] = useState<ListItem[]>([]);
+  const [medications, setMedications] = useState<ListItem[]>([]);
+  const [diseases, setDiseases] = useState<ListItem[]>([]);
+  const [surgeries, setSurgeries] = useState<ListItem[]>([]);
+
+  // inputs temporários
+  const [allergyInput, setAllergyInput] = useState('');
+  const [medInput, setMedInput] = useState('');
+  const [diseaseInput, setDiseaseInput] = useState('');
+  const [surgeryInput, setSurgeryInput] = useState('');
+
+  // contato
+  const [emgName, setEmgName] = useState('');
+  const [emgPhone, setEmgPhone] = useState('');
+
+  const [hasData, setHasData] = useState(false);
+  const [isEditing, setIsEditing] = useState(true);
+
+  const maxItems = 20;
+
   useEffect(() => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-    if (!token) {
-      router.replace('/login');
-      return;
-    }
+    if (!ready) return;
+    let mounted = true;
 
     (async () => {
-      setLoading(true);
-      setErr(null);
       try {
-        const p = await apiGet<ProfileApiResponse>('/me/profile').catch((e) => {
-          if (isApiError(e) && e.status === 404) return null; // sem perfil ainda
-          throw e;
-        });
+        setLoading(true);
+        setErr(null);
 
-        if (p) {
-          setFirstName(p.firstName ?? p.first_name ?? '');
-          setLastName(p.lastName ?? p.last_name ?? '');
-          setSex(p.sex ?? '');
-          setBloodType(p.bloodType ?? p.blood_type ?? '');
-          setEmergencyName(p.emergencyContactName ?? p.emergency_contact_name ?? '');
-          setEmergencyPhone(p.emergencyContactPhone ?? p.emergency_contact_phone ?? '');
-          setAllergies(fromList(p.allergies));
-          setMedications(fromList(p.medications));
-          setDiseases(fromList(p.diseases));
-          setSurgeries(fromList(p.surgeries));
-        }
+        const res = await apiGet<ProfileResponse>('/me/profile');
+        const data = res.data ?? {};
+
+        if (!mounted) return;
+
+        // Nome/CPF do topo
+        const fn = (data.firstName ?? '').trim();
+        const ln = (data.lastName ?? '').trim();
+        const full = (data.name ?? '').trim();
+        const composed = (fn || ln) ? `${fn}${ln ? ' ' + ln : ''}` : full;
+
+        setFirstNameRO(fn);
+        setLastNameRO(ln);
+        setName(composed);
+        setCpfMasked(cpfLast2Masked(data.cpf));
+
+        // Clínicos
+        setSex(isSex(data.sex) ? data.sex : EMPTY_SEX);
+        setBloodType(isBloodType(data.bloodType) ? data.bloodType : EMPTY_BLOOD);
+
+        setAllergies(Array.isArray(data.allergies) ? data.allergies.slice(0, maxItems) : []);
+        setMedications(Array.isArray(data.medications) ? data.medications.slice(0, maxItems) : []);
+        setDiseases(Array.isArray(data.diseases) ? data.diseases.slice(0, maxItems) : []);
+        setSurgeries(Array.isArray(data.surgeries) ? data.surgeries.slice(0, maxItems) : []);
+
+        setEmgName(data.emergencyContactName ?? '');
+        setEmgPhone(data.emergencyContactPhone ? formatPhoneBR(data.emergencyContactPhone) : '');
+
+        const anyData =
+          isSex(data.sex) ||
+          isBloodType(data.bloodType) ||
+          (Array.isArray(data.allergies) && data.allergies.length > 0) ||
+          (Array.isArray(data.medications) && data.medications.length > 0) ||
+          (Array.isArray(data.diseases) && data.diseases.length > 0) ||
+          (Array.isArray(data.surgeries) && data.surgeries.length > 0) ||
+          !!(data.emergencyContactName && data.emergencyContactName.trim()) ||
+          !!(data.emergencyContactPhone && data.emergencyContactPhone.trim());
+
+        setHasData(anyData);
+        setIsEditing(!anyData); // se já tem dados, começa travado; senão, modo edição
       } catch (e) {
-        if (isApiError(e) && e.status === 401) {
-          localStorage.removeItem('token');
-          router.replace('/login');
-          return;
-        }
-        setErr('Falha ao carregar perfil.');
+        setErr(e instanceof Error ? e.message : 'Falha ao carregar perfil.');
       } finally {
-        setLoading(false);
+        if (mounted) setLoading(false);
       }
     })();
-  }, [router]);
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
+    return () => {
+      mounted = false;
+    };
+  }, [ready]);
+
+  const canSave = useMemo(() => !saving && isEditing, [saving, isEditing]);
+  const disabled = !isEditing;
+
+  // add/remove item helpers
+  const addItem = (value: string, list: ListItem[], setter: (v: ListItem[]) => void) => {
+    if (disabled) return;
+    const v = value.trim();
+    if (!v) return;
+    if (list.length >= maxItems) return;
+    setter([...list, v]);
+  };
+  const removeItem = (index: number, list: ListItem[], setter: (v: ListItem[]) => void) => {
+    if (disabled) return;
+    setter(list.filter((_, i) => i !== index));
+  };
+
+  async function handleSave() {
+    if (!canSave) return;
     setSaving(true);
     setErr(null);
     setOkMsg(null);
 
     try {
-      const body: UpsertProfileBody = {
-        first_name: firstName.trim(),
-        last_name: lastName.trim(),
-        sex: sex ? sex.trim() : undefined,
-        blood_type: bloodType ? bloodType.trim() : undefined,
-        emergency_contact_name: emergencyName ? emergencyName.trim() : undefined,
-        emergency_contact_phone: emergencyPhone ? emergencyPhone.trim() : undefined,
-        allergies: toList(allergies),
-        medications: toList(medications),
-        diseases: toList(diseases),
-        surgeries: toList(surgeries),
-        consent: consent ? true : undefined,
-      };
+      // O backend exige first_name e last_name.
+      // Usamos os campos vindos da API; se vier só "name", fazemos split.
+      let firstToSend = firstNameRO;
+      let lastToSend = lastNameRO;
 
-      await apiPut<unknown>('/me/profile', body);
-
-      setOkMsg('Perfil salvo com sucesso.');
-      setTimeout(() => router.replace('/'), 700);
-    } catch (e) {
-      if (isApiError(e)) {
-        const msg = extractApiMessage(e.body);
-        setErr(msg ?? 'Erro ao salvar perfil.');
-      } else {
-        setErr('Erro ao salvar perfil.');
+      if (!firstToSend && !lastToSend && name.trim()) {
+        const { first, last } = splitFullName(name.trim());
+        firstToSend = first;
+        lastToSend = last;
       }
+
+      const phoneDigits = onlyDigits(emgPhone);
+
+      // Payload em snake_case como o backend espera
+      const payload = {
+        first_name: firstToSend || '',  // strings (validador exige string)
+        last_name: lastToSend || '',
+        sex: sex || null,
+        blood_type: bloodType || null,
+        allergies,
+        medications,
+        diseases,
+        surgeries,
+        emergency_contact_name: emgName || null,
+        emergency_contact_phone: phoneDigits || null,
+        consent: true,
+      } as const;
+
+      await apiPut('/me/profile', payload);
+      setOkMsg('Cadastro clínico salvo com sucesso.');
+      setHasData(true);
+      setIsEditing(false);
+
+      setTimeout(() => router.replace('/'), 600);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Falha ao salvar. Tente novamente.');
     } finally {
       setSaving(false);
     }
   }
 
-  if (loading) {
+  if (!ready || loading) {
     return (
-      <main className="p-6">
-        <h1 className="text-xl font-semibold">Carregando perfil…</h1>
+      <main className="relative min-h-dvh bg-[#E6EBFF] p-6 pb-24">
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <Image src="/logo.png" alt="ClinID" width={360} height={150} className="opacity-30" />
+        </div>
+        <div className="relative z-10">Carregando…</div>
+        <BottomNav />
       </main>
     );
   }
 
   return (
-    <main className="pb-24">
-      <header className="flex items-center justify-between p-6">
-        <h1 className="text-xl font-semibold">Editar perfil clínico</h1>
-        <Link className="text-sm underline text-slate-700" href="/">
-          Voltar
-        </Link>
-      </header>
+    <main className="relative min-h-dvh bg-[#E6EBFF] p-6 pb-24">
+      {/* logo de fundo */}
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+        <Image src="/logo.png" alt="ClinID" width={360} height={150} className="opacity-30" />
+      </div>
 
-      <form onSubmit={onSubmit} className="px-6 space-y-6">
-        {err && <p className="text-sm text-red-600">{String(err)}</p>}
-        {okMsg && <p className="text-sm text-green-600">{okMsg}</p>}
+      <div className="relative z-10 mx-auto w-full max-w-md">
+        <h1 className="mb-6 text-center text-lg font-semibold">Cadastro Clínico</h1>
 
-        <div className="grid gap-4 md:grid-cols-2">
-          <label className="block">
-            <span className="text-sm text-slate-600">Nome</span>
-            <input
-              className="mt-1 w-full rounded-md border px-3 py-2"
-              value={firstName}
-              onChange={(ev) => setFirstName(ev.target.value)}
-              required
-            />
-          </label>
-
-          <label className="block">
-            <span className="text-sm text-slate-600">Sobrenome</span>
-            <input
-              className="mt-1 w-full rounded-md border px-3 py-2"
-              value={lastName}
-              onChange={(ev) => setLastName(ev.target.value)}
-              required
-            />
-          </label>
-
-          <label className="block">
-            <span className="text-sm text-slate-600">Sexo (M/F/Outro)</span>
-            <input
-              className="mt-1 w-full rounded-md border px-3 py-2"
-              value={sex}
-              onChange={(ev) => setSex(ev.target.value)}
-              placeholder="M"
-            />
-          </label>
-
-          <label className="block">
-            <span className="text-sm text-slate-600">Tipo sanguíneo</span>
-            <input
-              className="mt-1 w-full rounded-md border px-3 py-2"
-              value={bloodType}
-              onChange={(ev) => setBloodType(ev.target.value)}
-              placeholder="O+"
-            />
-          </label>
-
-          <label className="block">
-            <span className="text-sm text-slate-600">Contato de emergência (nome)</span>
-            <input
-              className="mt-1 w-full rounded-md border px-3 py-2"
-              value={emergencyName}
-              onChange={(ev) => setEmergencyName(ev.target.value)}
-              placeholder="Ex.: Maria"
-            />
-          </label>
-
-          <label className="block">
-            <span className="text-sm text-slate-600">Contato de emergência (telefone)</span>
-            <input
-              className="mt-1 w-full rounded-md border px-3 py-2"
-              value={emergencyPhone}
-              onChange={(ev) => setEmergencyPhone(ev.target.value)}
-              placeholder="11999999999"
-            />
-          </label>
+        {/* Cabeçalho: nome/cpf + ações */}
+        <div className="mb-3 flex items-start justify-between">
+          <div className="text-sm">
+            <div>{name || '—'}</div>
+            <div className="text-slate-600">CPF: {cpfMasked}</div>
+          </div>
+          <div className="text-xs">
+            {hasData && !isEditing ? (
+              <button
+                type="button"
+                onClick={() => setIsEditing(true)}
+                className="mr-2 underline"
+                title="Editar cadastro clínico"
+              >
+                EDITAR
+              </button>
+            ) : (
+              <span className="mr-2 select-none text-slate-400">EDITANDO…</span>
+            )}
+            /
+            <Link href="/settings/delete" className="ml-2 underline" title="Excluir conta">
+              EXCLUIR
+            </Link>
+          </div>
         </div>
 
-        <div className="grid gap-4">
-          <label className="block">
-            <span className="text-sm text-slate-600">Alergias (separe por vírgula)</span>
-            <input
-              className="mt-1 w-full rounded-md border px-3 py-2"
-              value={allergies}
-              onChange={(ev) => setAllergies(ev.target.value)}
-              placeholder="Penicilina, Dipirona"
-            />
-          </label>
+        {err && <p className="mb-3 text-sm text-red-600">{err}</p>}
+        {okMsg && <p className="mb-3 text-sm text-green-600">{okMsg}</p>}
 
-          <label className="block">
-            <span className="text-sm text-slate-600">Medicações em uso (vírgula)</span>
-            <input
-              className="mt-1 w-full rounded-md border px-3 py-2"
-              value={medications}
-              onChange={(ev) => setMedications(ev.target.value)}
-              placeholder="AAS 100mg"
-            />
-          </label>
+        {/* Sexo / Tipo sanguíneo */}
+        <div className="mb-4 grid grid-cols-[auto_1fr_auto_1fr] items-center gap-x-3 gap-y-2">
+          <label className="text-sm">Sexo:</label>
+          <select
+            className="rounded-md border bg-white px-3 py-2 text-sm disabled:bg-slate-100"
+            value={sex}
+            onChange={(e) => setSex(e.target.value as SexOption)}
+            disabled={disabled}
+          >
+            <option value="">Selecione…</option>
+            {SEX_OPTIONS.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
 
-          <label className="block">
-            <span className="text-sm text-slate-600">Doenças (vírgula)</span>
-            <input
-              className="mt-1 w-full rounded-md border px-3 py-2"
-              value={diseases}
-              onChange={(ev) => setDiseases(ev.target.value)}
-              placeholder="Hipertensão, Diabetes"
-            />
-          </label>
-
-          <label className="block">
-            <span className="text-sm text-slate-600">Cirurgias (vírgula)</span>
-            <input
-              className="mt-1 w-full rounded-md border px-3 py-2"
-              value={surgeries}
-              onChange={(ev) => setSurgeries(ev.target.value)}
-              placeholder="Colecistectomia 2017"
-            />
-          </label>
+          <label className="text-right text-sm">Tipo Sanguíneo:</label>
+          <select
+            className="rounded-md border bg-white px-3 py-2 text-sm disabled:bg-slate-100"
+            value={bloodType}
+            onChange={(e) => setBloodType(e.target.value as BloodTypeOption)}
+            disabled={disabled}
+          >
+            <option value="">Selecione…</option>
+            {BLOOD_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
         </div>
 
-        <label className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            className="h-4 w-4"
-            checked={!!consent}
-            onChange={(ev) => setConsent(ev.target.checked)}
-          />
-          <span className="text-sm">
-            Concordo em manter meus dados disponíveis no link público com PIN.
-          </span>
-        </label>
+        {/* Alergias */}
+        <FieldWithAdder
+          label="Alergias:"
+          placeholder="Antialérgico"
+          value={allergyInput}
+          onChange={setAllergyInput}
+          list={allergies}
+          onAdd={() => {
+            addItem(allergyInput, allergies, setAllergies);
+            setAllergyInput('');
+          }}
+          onRemove={(i) => removeItem(i, allergies, setAllergies)}
+          maxItems={maxItems}
+          disabled={disabled}
+        />
 
-        <div className="flex gap-3 pt-2">
+        {/* Medicamentos */}
+        <FieldWithAdder
+          label="Medicamentos utilizados:"
+          placeholder="Nome do medicamento"
+          value={medInput}
+          onChange={setMedInput}
+          list={medications}
+          onAdd={() => {
+            addItem(medInput, medications, setMedications);
+            setMedInput('');
+          }}
+          onRemove={(i) => removeItem(i, medications, setMedications)}
+          maxItems={maxItems}
+          disabled={disabled}
+        />
+
+        {/* Doenças */}
+        <FieldWithAdder
+          label="Doenças:"
+          placeholder="Doença"
+          value={diseaseInput}
+          onChange={setDiseaseInput}
+          list={diseases}
+          onAdd={() => {
+            addItem(diseaseInput, diseases, setDiseases);
+            setDiseaseInput('');
+          }}
+          onRemove={(i) => removeItem(i, diseases, setDiseases)}
+          maxItems={maxItems}
+          disabled={disabled}
+        />
+
+        {/* Cirurgias */}
+        <FieldWithAdder
+          label="Cirurgias realizadas:"
+          placeholder="Cirurgia"
+          value={surgeryInput}
+          onChange={setSurgeryInput}
+          list={surgeries}
+          onAdd={() => {
+            addItem(surgeryInput, surgeries, setSurgeries);
+            setSurgeryInput('');
+          }}
+          onRemove={(i) => removeItem(i, surgeries, setSurgeries)}
+          maxItems={maxItems}
+          disabled={disabled}
+        />
+
+        {/* Contato de emergência */}
+        <div className="mt-4">
+          <label className="mb-1 block text-sm">Contato de emergência:</label>
+
+          <div className="mb-3">
+            <label className="mb-1 block text-sm">Nome:</label>
+            <input
+              className="w-full rounded-md border bg-white px-3 py-2 text-sm disabled:bg-slate-100"
+              value={emgName}
+              onChange={(e) => setEmgName(e.target.value)}
+              placeholder="Nome do contato"
+              disabled={disabled}
+            />
+          </div>
+
+          <div className="mb-3">
+            <label className="mb-1 block text-sm">Celular:</label>
+            <input
+              className="w-full rounded-md border bg-white px-3 py-2 text-sm disabled:bg-slate-100"
+              value={emgPhone}
+              onChange={(e) => setEmgPhone(formatPhoneBR(e.target.value))}
+              inputMode="tel"
+              placeholder="(DD) 9 9999-9999"
+              disabled={disabled}
+            />
+          </div>
+        </div>
+
+        {/* Salvar */}
+        <div className="mt-4 pb-2">
           <button
-            type="submit"
-            disabled={saving}
-            className="rounded-md bg-slate-900 px-4 py-2 text-white disabled:opacity-60"
+            type="button"
+            disabled={!canSave}
+            onClick={handleSave}
+            className="w-full rounded-md bg-slate-900 px-4 py-2 text-white disabled:opacity-60"
           >
             {saving ? 'Salvando…' : 'Salvar'}
           </button>
-          <Link href="/" className="rounded-md border px-4 py-2 text-slate-800">
-            Cancelar
-          </Link>
         </div>
-      </form>
+      </div>
+
+      <BottomNav />
     </main>
+  );
+}
+
+/* =======================
+   Campo com “+” e lista
+======================= */
+function FieldWithAdder(props: {
+  label: string;
+  placeholder?: string;
+  value: string;
+  onChange: (v: string) => void;
+  onAdd: () => void;
+  onRemove: (index: number) => void;
+  list: string[];
+  maxItems: number;
+  disabled?: boolean;
+}) {
+  const { label, placeholder, value, onChange, onAdd, onRemove, list, maxItems, disabled } = props;
+
+  return (
+    <div className="mb-4">
+      <label className="mb-1 block text-sm">{label}</label>
+      <div className="flex gap-2">
+        <input
+          className="flex-1 rounded-md border bg-white px-3 py-2 text-sm disabled:bg-slate-100"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          disabled={!!disabled}
+          onKeyDown={(e) => {
+            if (disabled) return;
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              onAdd();
+            }
+          }}
+        />
+        <button
+          type="button"
+          onClick={onAdd}
+          disabled={!!disabled || !value.trim() || list.length >= maxItems}
+          className="grid h-9 w-9 place-items-center rounded-md border bg-white text-xl leading-none disabled:opacity-50"
+          aria-label="Adicionar"
+          title="Adicionar"
+        >
+          +
+        </button>
+      </div>
+
+      {list.length > 0 && (
+        <ul className="mt-2 space-y-1">
+          {list.map((item, i) => (
+            <li
+              key={`${item}-${i}`}
+              className="flex items-center justify-between rounded-md border bg-white px-3 py-2 text-sm"
+            >
+              <span className="truncate">• {item}</span>
+              <button
+                type="button"
+                className="ml-2 text-slate-500 hover:text-red-600 disabled:opacity-50"
+                onClick={() => onRemove(i)}
+                title="Remover"
+                aria-label="Remover"
+                disabled={!!disabled}
+              >
+                ×
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }

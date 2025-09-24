@@ -9,10 +9,7 @@ export class HistoryController {
   constructor(private readonly svc: HistoryService) {}
 
   @Get('/me/history')
-  list(
-    @Req() req: Request & { user: { sub: string } },
-    @Query('limit') limit?: string,
-  ) {
+  list(@Req() req: Request & { user: { sub: string } }, @Query('limit') limit?: string) {
     const take = limit ? Math.max(1, Math.min(50, Number(limit))) : 10;
     return this.svc.list(req.user.sub, take);
   }
