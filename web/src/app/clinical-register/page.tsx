@@ -2,7 +2,7 @@
 import { Logo } from '@/components/logo';
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { apiGet, apiPut } from '@/lib/api';
+import { apiGet, apiPut, ApiError } from '@/lib/api'; // Import ApiError
 import BottomNav from '@/components/BottomNav';
 
 /* =======================
@@ -30,6 +30,7 @@ type ProfileResponse = {
   surgeries?: string[] | null;
   emergencyContactName?: string | null;
   emergencyContactPhone?: string | null;
+  email?: string; // Adicionado para exibir no exemplo, se vier da API
 };
 
 function isSex(v: unknown): v is Exclude<SexOption, ''> {
@@ -97,35 +98,14 @@ export default function ClinicalRegisterPage() {
   useEffect(() => {
     let mounted = true;
 
-    (async () => {
+    const fetchProfile = async () => {
       try {
-        const res = await apiGet<ProfileResponse>('/me/profile');
+        // apiGet lança ApiError para status não-2xx ou redireciona 401
+        // Se esta linha não lançar erro, 'data' é ProfileResponse
+        const data = await apiGet<ProfileResponse>('/me/profile');
         if (!mounted) return;
 
-        // 401 → usuário não autenticado (mantenha a tela / ou redirecione conforme sua UX)
-        if (res.status === 401) {
-          setLoading(false);
-          return;
-        }
-
-        // 404 → ainda não tem cadastro clínico (deixa tudo vazio)
-        if (res.status === 404) {
-          setHasData(false);
-          setIsEditing(true);
-          setLoading(false);
-          return;
-        }
-
-        if (!res.ok || !res.data) {
-          // erro genérico (exibe vazio, mas habilita edição)
-          setHasData(false);
-          setIsEditing(true);
-          setLoading(false);
-          return;
-        }
-
-        const data = res.data;
-
+        // Se chegamos aqui, o profile foi carregado com sucesso (status 2xx)
         setName(data.name ?? '');
         setCpf(data.cpf ?? '');
 
@@ -151,11 +131,29 @@ export default function ClinicalRegisterPage() {
           !!(data.emergencyContactPhone && data.emergencyContactPhone.trim());
 
         setHasData(anyData);
-        setIsEditing(!anyData);
+        setIsEditing(!anyData); // Se não há dados, começa editando
+      } catch (err) {
+        if (!mounted) return;
+        if (err instanceof ApiError) {
+          if (err.status === 404) {
+            // 404 → ainda não tem cadastro clínico (deixa tudo vazio)
+            console.log('Nenhum perfil clínico encontrado. Começando novo registro.');
+            setHasData(false);
+            setIsEditing(true); // Permite ao usuário criar um novo perfil
+          } else if (err.status !== 401) { // 401 já é tratado com redirecionamento em apiGet
+            console.error(`Erro da API (${err.status}):`, err.message);
+            // Poderia mostrar uma mensagem de erro genérica na UI, se desejar
+          }
+        } else {
+          console.error('Erro desconhecido ou de rede ao carregar perfil:', err);
+          // Poderia mostrar uma mensagem de erro de rede na UI
+        }
       } finally {
         if (mounted) setLoading(false);
       }
-    })().catch(() => setLoading(false));
+    };
+
+    fetchProfile();
 
     return () => {
       mounted = false;
@@ -197,18 +195,20 @@ export default function ClinicalRegisterPage() {
         consent: true,
       } as const;
 
-      const res = await apiPut<unknown>('/me/profile', payload);
+      // apiPut também lança ApiError em caso de falha.
+      // Se esta linha não lançar erro, a operação foi bem-sucedida.
+      await apiPut<unknown>('/me/profile', payload);
 
-      if (!res.ok) {
-        // feedback simples (você pode customizar por status)
-        alert(`Falha ao salvar (HTTP ${res.status}). Tente novamente.`);
-        return;
-        }
       alert('Cadastro clínico salvo com sucesso!');
       setHasData(true);
       setIsEditing(false);
-    } catch {
-      alert('Falha ao salvar. Tente novamente.');
+    } catch (err) {
+      if (err instanceof ApiError) {
+        alert(`Falha ao salvar (HTTP ${err.status}). Mensagem: ${err.message}. Tente novamente.`);
+      } else {
+        alert('Falha ao salvar. Verifique sua conexão e tente novamente.');
+      }
+      console.error('Erro ao salvar perfil:', err);
     } finally {
       setSaving(false);
     }
@@ -299,7 +299,7 @@ export default function ClinicalRegisterPage() {
           value={allergyInput}
           onChange={setAllergyInput}
           list={allergies}
-          onAdd={() => { addItem(allergyInput, allergies, setAllergies); setAllergyInput(''); }}
+          onAdd={() => { addItem(allergyInput, allergies, setAllergyInput); }}
           onRemove={(i) => removeItem(i, allergies, setAllergies)}
           maxItems={maxItems}
           disabled={disabled}
@@ -312,7 +312,7 @@ export default function ClinicalRegisterPage() {
           value={medInput}
           onChange={setMedInput}
           list={medications}
-          onAdd={() => { addItem(medInput, medications, setMedications); setMedInput(''); }}
+          onAdd={() => { addItem(medInput, medications, setMedInput); }}
           onRemove={(i) => removeItem(i, medications, setMedications)}
           maxItems={maxItems}
           disabled={disabled}
@@ -325,7 +325,7 @@ export default function ClinicalRegisterPage() {
           value={diseaseInput}
           onChange={setDiseaseInput}
           list={diseases}
-          onAdd={() => { addItem(diseaseInput, diseases, setDiseases); setDiseaseInput(''); }}
+          onAdd={() => { addItem(diseaseInput, diseases, setDiseaseInput); }}
           onRemove={(i) => removeItem(i, diseases, setDiseases)}
           maxItems={maxItems}
           disabled={disabled}
@@ -338,7 +338,7 @@ export default function ClinicalRegisterPage() {
           value={surgeryInput}
           onChange={setSurgeryInput}
           list={surgeries}
-          onAdd={() => { addItem(surgeryInput, surgeries, setSurgeries); setSurgeryInput(''); }}
+          onAdd={() => { addItem(surgeryInput, surgeries, setSurgeryInput); }}
           onRemove={(i) => removeItem(i, surgeries, setSurgeries)}
           maxItems={maxItems}
           disabled={disabled}
