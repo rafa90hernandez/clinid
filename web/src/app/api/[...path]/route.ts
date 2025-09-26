@@ -4,7 +4,9 @@ import { NextResponse, type NextRequest } from 'next/server';
 export const runtime = 'nodejs'; // Especifica o runtime para Node.js
 export const dynamic = 'force-dynamic'; // Garante que a rota não seja estaticamente otimizada
 
-
+// É CRUCIAL que esta variável de ambiente seja configurada no ambiente
+// do seu serviço Next.js (frontend) no Render.
+// Ela deve apontar para a URL PÚBLICA do seu serviço de API de backend.
 const API_BACKEND_URL = process.env.API_BACKEND_URL || 'https://clinid.onrender.com';
 
 /**
@@ -55,7 +57,11 @@ function copyUpstreamHeaders(upstream: Response): Headers {
   const out = new Headers();
   upstream.headers.forEach((v, k) => {
     // Copia todos os cabeçalhos da resposta do backend.
-   
+    // Em alguns cenários, pode ser necessário filtrar ou ajustar 'set-cookie'
+    // se o backend estiver tentando definir cookies para um domínio diferente
+    // do domínio do frontend (o que causaria bloqueios de navegador).
+    // No nosso caso atual, o `access_token` será lido do corpo da resposta,
+    // então a cópia de `set-cookie` (HttpOnly) não afetará o fluxo de auth principal.
     out.append(k, v);
   });
   return out;
@@ -83,7 +89,8 @@ async function proxyRequest(method: string, req: NextRequest, path: string[]): P
   }
 
   // Faz a requisição ao backend.
-  const `upstream` = await fetch(url, {
+  // CORREÇÃO AQUI: Removidos os backticks de 'upstream'
+  const upstream = await fetch(url, {
     method,
     headers,
     body: requestBody, // Passa o corpo lido, se houver
