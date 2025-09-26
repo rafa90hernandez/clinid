@@ -1,6 +1,4 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
-# dependencies
+# dependências
 /node_modules
 /.pnp
 .pnp.*
@@ -9,56 +7,43 @@
 !.yarn/plugins
 !.yarn/releases
 !.yarn/versions
-node_modules
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
 .pnpm-store
 
-# Builds
-.next
-dist
+# Artefatos de build
+.next/
+/out/
+/build
+/dist
 coverage
 *.tsbuildinfo
 
-# Env
+# Variáveis de ambiente
 .env
-.env.*
-!.env.example
+.env.development.local
+.env.test.local
+.env.production.local
+.env.local
+!.env.example # Permite commitar um .env.example como template
 
-# Docker
-.docker
-resp.json
-.vscode/
-web/devnull
-
-# testing
-/coverage
-
-# next.js
-/.next/
-/out/
-
-# production
-/build
-
-# misc
-.DS_Store
-*.pem
-
-# debug
+# Arquivos de log e debug
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+resp.json # Assumindo que seja um arquivo temporário de resposta
 
-# env files (can opt-in for committing if needed)
-.env*
+# Arquivos temporários e de sistema
+.DS_Store # macOS
+web/devnull # Conforme identificado no seu atual
 
-# vercel
-.vercel
+# Configurações de IDE e Ferramentas
+.vscode/
+.idea/ # Para usuários do WebStorm/IntelliJ
+.next/cache # Cache específico do Next.js (já coberto por .next/)
 
-# typescript
-*.tsbuildinfo
-next-env.d.ts
+# Ferramentas de Deploy/CI
+.vercel # Vercel CLI config
+.docker # Arquivos temporários do Docker CLI ou de configuração local
 
+# Segurança
+*.pem # Chaves e certificados
