@@ -57,15 +57,16 @@ model PublicCredential {
 }
 
 model PublicLink {
-  id        String           @id @default(uuid()) @db.Uuid
-  userId    String           @db.Uuid
-  slug      String           @unique
-  status    PublicLinkStatus
-  createdAt DateTime         @default(now())
-  revokedAt DateTime?
-  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String            @id @default(cuid())
+  slug      String            @unique
+  status    PublicLinkStatus  @default(ACTIVE)
+  isActive  Boolean           @default(true)
 
-  @@index([userId])
+  userId    String            @unique   // ⬅️ torne userId único
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
 }
 
 model ClinicalHistory {
@@ -113,8 +114,8 @@ model AuditLog {
 }
 
 enum PublicLinkStatus {
-  active
-  revoked
+  ACTIVE
+  REVOKED
 }
 
 enum Role {
