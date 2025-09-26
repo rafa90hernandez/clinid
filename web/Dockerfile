@@ -1,5 +1,11 @@
 # -------- Builder --------
 FROM node:20-alpine3.20 AS builder
+
+# Adiciona NEXT_PUBLIC_API_URL como argumento de build e o define como ENV var
+# para que esteja disponível durante 'npx next build'
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+
 WORKDIR /usr/src/app
 
 # Para Next.js às vezes ajuda ter compat layer
