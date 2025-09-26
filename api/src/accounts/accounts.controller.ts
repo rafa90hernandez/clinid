@@ -53,8 +53,13 @@ export class AccountsController {
     const token = this.accounts.issueAccessToken(req.user);
     const opts = cookieOptsForEnv();
 
+    // Podemos manter a linha abaixo para compatibilidade ou se a API for usada por clientes
+    // que não sejam navegador, mas o frontend NÃO DEVERÁ MAIS depender dela para a autenticação principal.
     res.cookie('auth_token', token.access_token, opts);
-    return { ok: true };
+
+    // ALTERAÇÃO CRUCIAL AQUI: Retorna o objeto 'token' completo, que contém 'access_token'
+    // O frontend agora deve ler este valor do corpo da resposta.
+    return token; // Isso fará com que a resposta JSON seja { "access_token": "..." }
   }
 
   @UseGuards(JwtAuthGuard)
