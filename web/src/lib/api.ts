@@ -1,86 +1,175 @@
 // web/src/lib/api.ts
 
-const API_BASE_URL = '/api'; // Aponta para o Next.js API Route (ex: /api/accounts/login)
-
-// Define uma classe de erro customizada para incluir o status HTTP
 export class ApiError extends Error {
-  status: number;
-  constructor(message: string, status: number) {
+  readonly status: number;
+  readonly url?: string;
+  readonly body?: unknown;
+
+  constructor(message: string, status: number, url?: string, body?: unknown) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
-    // Captura o stack trace, excluindo o construtor do erro
-    if (Error.captureStackTrace) {
-      Error.captureStackTrace(this, ApiError);
-    }
+    this.url = url;
+    this.body = body;
   }
 }
 
-async function requestApi<T>(
-  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
-  path: string,
-  body?: object,
-  options?: RequestInit,
-): Promise<T> {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
+/**
+ * Base da API (defina no Render/Local):
+ * NEXT_PUBLIC_API_BASE_URL=https://clinid-api.onrender.com
+ * Em dev, cai no localhost:3001.
+ */
+export const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, '') ?? 'http://localhost:3001';
 
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json',
-    ...options?.headers,
+/** Token opcional (se você ainda suportar Bearer além de cookie httpOnly). */
+function getAuthToken(): string | null {
+  try {
+    if (typeof window === 'undefined') return null;
+    return localStorage.getItem('access_token') || null;
+  } catch {
+    return null;
+  }
+}
+
+/** Redireciona em 401 se estamos no client */
+function maybeRedirectToLoginOn401(status: number) {
+  if (typeof window !== 'undefined' && status === 401) {
+    const next = window.location.pathname + window.location.search;
+    const nextParam = encodeURIComponent(next);
+    window.location.replace(`/login?next=${nextParam}`);
+  }
+}
+
+/** Constrói Headers de forma segura (sem erro de tipagem). */
+function buildHeaders(init?: RequestInit, withJson: boolean = true): Headers {
+  const headers = new Headers(init?.headers ?? {});
+  const token = getAuthToken();
+
+  if (withJson && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+  return headers;
+}
+
+/** Trata a resposta: lança ApiError se !ok; retorna JSON (ou null se 204/empty). */
+async function handleResponse<T>(response: Response, url: string): Promise<T> {
+  if (!response.ok) {
+    let body: unknown = null;
+    try {
+      // tenta parsear JSON de erro, mas não depende disso
+      body = await response.clone().json();
+    } catch {
+      /* ignore */
+    }
+
+    // redireciona em 401 no client, mas também lança erro (SSR/calls isolados tratam)
+    if (response.status === 401) {
+      maybeRedirectToLoginOn401(401);
+    }
+
+    throw new ApiError(
+      (body && typeof body === 'object' && 'message' in body
+        ? String((body as { message?: unknown }).message ?? 'Erro na API')
+        : `Erro ${response.status} na API`),
+      response.status,
+      url,
+      body
+    );
+  }
+
+  if (response.status === 204) {
+    // No Content
+    return null as unknown as T;
+  }
+
+  // Alguns endpoints podem retornar vazio (ex.: 200 com corpo vazio)
+  const text = await response.text();
+  if (!text) return null as unknown as T;
+
+  return JSON.parse(text) as T;
+}
+
+/** Requisição base */
+async function request<T>(
+  path: string,
+  init?: RequestInit & { jsonBody?: unknown; noJsonHeader?: boolean }
+): Promise<T> {
+  const url = `${API_BASE_URL}${path}`;
+  const withJson = init?.noJsonHeader ? false : true;
+
+  const headers = buildHeaders(init, withJson);
+
+  const fetchInit: RequestInit = {
+    method: init?.method ?? 'GET',
+    headers,
+    body:
+      init?.jsonBody !== undefined
+        ? JSON.stringify(init.jsonBody)
+        : init?.body ?? undefined,
+    credentials: 'include', // envia cookies httpOnly
+    // Você pode adicionar: mode, cache, signal, etc. se precisar.
   };
 
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-    ...options,
-  });
-
-  if (!response.ok) {
-    // Se for 401 Unauthorized, limpa o token e redireciona para login
-    if (response.status === 401 && token) {
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('access_token');
-        window.location.href = '/login'; // Redireciona o usuário
-      }
-      // Mesmo com redirecionamento, lançamos o erro para interromper a execução no componente
-      throw new ApiError('Unauthorized', response.status);
-    }
-
-    // Tenta ler a mensagem de erro do corpo da resposta, caso exista
-    const errorData = await response.json().catch(() => ({ message: 'Erro desconhecido na API' }));
-    // Lança o ApiError com a mensagem e o status
-    throw new ApiError(errorData.message || `Erro na API: ${response.status} ${response.statusText}`, response.status);
-  }
-
-  // Se a resposta for 204 No Content, não há corpo para parsear, retorna null
-  if (response.status === 204) {
-    return null as T;
-  }
-
-  // Retorna o corpo da resposta como JSON
-  return response.json() as Promise<T>;
+  const res = await fetch(url, fetchInit);
+  return handleResponse<T>(res, url);
 }
 
-export const apiGet = <T>(path: string, options?: RequestInit) => requestApi<T>('GET', path, undefined, options);
-export const apiPost = <T>(path: string, body: object, options?: RequestInit) => requestApi<T>('POST', path, body, options);
-export const apiPut = <T>(path: string, body: object, options?: RequestInit) => requestApi<T>('PUT', path, body, options);
-export const apiPatch = <T>(path: string, body: object, options?: RequestInit) => requestApi<T>('PATCH', path, body, options);
-export const apiDelete = <T>(path: string, options?: RequestInit) => requestApi<T>('DELETE', path, undefined, options);
+/* ===========================
+   Helpers públicos de alto nível
+   =========================== */
 
-export async function apiLogin(email: string, password: string): Promise<{ access_token: string }> {
-  const responseData = await apiPost<{ access_token?: string }>('/accounts/login', { email, password });
+export async function apiGet<T>(path: string, init?: RequestInit): Promise<T> {
+  return request<T>(path, { ...init, method: 'GET' });
+}
 
-  if (responseData && responseData.access_token) {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('access_token', responseData.access_token);
-    }
-    return { access_token: responseData.access_token };
-  } else {
-    throw new Error('Login bem-sucedido, mas o token de acesso não foi encontrado na resposta da API.');
-  }
+export async function apiPost<T, B = unknown>(
+  path: string,
+  body?: B,
+  init?: RequestInit
+): Promise<T> {
+  return request<T>(path, {
+    ...init,
+    method: 'POST',
+    jsonBody: body,
+  });
+}
+
+export async function apiPut<T, B = unknown>(
+  path: string,
+  body?: B,
+  init?: RequestInit
+): Promise<T> {
+  return request<T>(path, {
+    ...init,
+    method: 'PUT',
+    jsonBody: body,
+  });
+}
+
+export async function apiPatch<T, B = unknown>(
+  path: string,
+  body?: B,
+  init?: RequestInit
+): Promise<T> {
+  return request<T>(path, {
+    ...init,
+    method: 'PATCH',
+    jsonBody: body,
+  });
+}
+
+export async function apiDelete<T, B = unknown>(
+  path: string,
+  body?: B,
+  init?: RequestInit
+): Promise<T> {
+  return request<T>(path, {
+    ...init,
+    method: 'DELETE',
+    jsonBody: body,
+  });
 }

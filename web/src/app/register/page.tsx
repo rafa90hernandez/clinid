@@ -124,7 +124,7 @@ export default function RegisterPage() {
         password,
       });
 
-      if (!res.ok || !res.data) {
+      if (!res || !res) {
         throw new Error('Falha ao cadastrar.');
       }
 

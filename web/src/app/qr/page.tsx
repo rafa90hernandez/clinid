@@ -69,7 +69,7 @@ export default function QrPage() { // Componente funcional para a página /qr
 
       // 2) Gera (ou regera) o link público
       const res = await apiPost<PublicLink>('/me/public-link', {});
-      const link = res.data;
+      const link = res;
       if (!link?.slug) throw new Error('Não foi possível gerar o link público.');
 
       // 3) Guarda o PIN no sessionStorage para que a página de acesso público possa pré-preencher

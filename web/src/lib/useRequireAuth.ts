@@ -1,46 +1,60 @@
+// web/src/lib/useRequireAuth.ts
 'use client';
 
 import { useEffect, useState } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
-import { apiGet } from './api';
+import { apiGet, ApiError } from '@/lib/api';
 
-type Me = { id?: string; sub?: string; email: string };
+export type Me = {
+  id: string;
+  email: string;
+  role?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  createdAt?: string;
+};
 
-export function useRequireAuth() {
-  const router = useRouter();
-  const pathname = usePathname();
+type UseRequireAuthResult = {
+  me: Me | null;
+  ready: boolean; // true quando já sabemos se há sessão (com ou sem usuário)
+};
 
-  const [ready, setReady] = useState(false);
+export function useRequireAuth(): UseRequireAuthResult {
   const [me, setMe] = useState<Me | null>(null);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
 
-    (async () => {
+    async function load() {
       try {
-        // ⬅️ seu apiGet retorna { ok, status, data, response }
-        const { data } = await apiGet<Me>('/accounts/me');
-
+        // apiGet<Me> retorna o JSON tipado diretamente (sem .data)
+        const meRes = await apiGet<Me>('/accounts/me');
         if (cancelled) return;
-        setMe(data ?? null);
-        setReady(true);
-      } catch {
-        if (cancelled) return;
-        setMe(null);
-        setReady(true);
-
-        // Evita loop quando já está em /login ou /register
-        if (pathname !== '/login' && pathname !== '/register') {
-          const next = encodeURIComponent(pathname || '/');
-          router.replace(`/login?next=${next}`);
+        setMe(meRes ?? null);
+      } catch (err: unknown) {
+        // Se seu api.ts já redireciona em 401, aqui só marcamos como pronto
+        if (err instanceof ApiError) {
+          if (err.status === 401) {
+            if (!cancelled) setMe(null);
+          } else {
+            // Outros erros de API: considere logar/telemetria
+            if (!cancelled) setMe(null);
+          }
+        } else {
+          if (!cancelled) setMe(null);
         }
+      } finally {
+        if (!cancelled) setReady(true);
       }
-    })();
+    }
 
+    load();
     return () => {
       cancelled = true;
     };
-  }, [router, pathname]);
+  }, []);
 
-  return { ready, me };
+  return { me, ready };
 }
+
+export default useRequireAuth;

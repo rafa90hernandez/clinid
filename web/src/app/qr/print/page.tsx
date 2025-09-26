@@ -15,15 +15,6 @@ type PublicLink = {
   revokedAt: string | null;
 };
 
-// Aceita tanto “puro” quanto “envelopado”
-type ApiBox<T> = { ok: boolean; status: number; data: T | null; response: Response };
-function unwrap<T>(res: T | ApiBox<T>): T | null {
-  if (res && typeof res === 'object' && 'ok' in res && 'data' in res) {
-    return (res as ApiBox<T>).data ?? null;
-  }
-  return (res as T) ?? null;
-}
-
 export default function PrintEmergencyCardPage() {
   // garante que o usuário está logado antes de buscar dados
   const { ready } = useRequireAuth();
@@ -45,9 +36,9 @@ export default function PrintEmergencyCardPage() {
       setLoading(true);
       setErr(null);
       try {
-        const res = await apiGet<PublicLink | null>('/me/public-link');
-        const data = unwrap<PublicLink | null>(res);
-        setLink(data);
+        // apiGet já retorna o JSON tipado (T), sem .data
+        const publicLink = await apiGet<PublicLink | null>('/me/public-link');
+        setLink(publicLink);
       } catch {
         setErr('Erro ao carregar link público. Faça login novamente.');
         setLink(null);

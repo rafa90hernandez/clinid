@@ -1,84 +1,92 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { apiDelete } from '@/lib/api';
+import { apiDelete, ApiError } from '@/lib/api';
 
 export default function DeleteAccountPage() {
   const router = useRouter();
   const [password, setPassword] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
 
-  async function onDelete() {
-    if (!password || password.length < 6) {
-      setMsg('Informe sua senha (mínimo 6 caracteres).');
-      return;
-    }
+  async function onDelete(e: React.FormEvent) {
+    e.preventDefault();
+    if (!password || submitting) return;
 
+    setSubmitting(true);
+    setErr(null);
     setMsg(null);
-    setLoading(true);
 
     try {
-      // ✅ Endpoint correto do backend: DELETE /accounts
-      await apiDelete<unknown>('/accounts', { confirmLoginPassword: password });
+      await apiDelete<unknown>('/accounts', {
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirmLoginPassword: password }),
+      });
 
       setMsg('Conta excluída com sucesso. Você será redirecionado.');
-      // opcional: limpar qualquer token legado do localStorage
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('token');
+      setTimeout(() => {
+        router.replace('/login');
+      }, 1500);
+    } catch (error: unknown) {
+      if (error instanceof ApiError) {
+        setErr(error.message ?? `Falha ao excluir a conta (HTTP ${error.status}).`);
+      } else if (error instanceof Error) {
+        setErr(error.message);
+      } else {
+        setErr('Falha ao excluir a conta.');
       }
-      setTimeout(() => router.replace('/login'), 1500);
-    } catch (e: unknown) {
-      // se for 401, provavelmente sessão expirou
-      if (typeof e === 'object' && e && 'status' in e && (e as { status?: number }).status === 401) {
-        setMsg('Sessão expirada. Faça login novamente.');
-        setTimeout(() => router.replace('/login'), 1200);
-        return;
-      }
-      const errMsg = e instanceof Error ? e.message : 'Falha ao excluir conta';
-      setMsg(errMsg);
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   }
 
   return (
-    <main className="mx-auto max-w-md p-4">
-      <h1 className="mb-3 text-lg font-semibold">Excluir minha conta</h1>
-      <p className="mb-3 text-sm text-slate-600">
-        Esta ação é irreversível. Seus links públicos serão revogados e o acesso será bloqueado.
+    <main className="mx-auto max-w-md p-6">
+      <h1 className="text-xl font-semibold">Excluir conta</h1>
+      <p className="mt-2 text-sm text-slate-600">
+        Esta ação é <strong>irreversível</strong>. Confirme sua senha para prosseguir.
       </p>
 
-      <label className="block text-sm">
-        <span className="text-slate-600">Confirme sua senha</span>
-        <input
-          type="password"
-          className="mt-1 w-full rounded border px-3 py-2"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="Sua senha de login"
-          autoComplete="current-password"
-        />
-      </label>
+      <form onSubmit={onDelete} className="mt-6 space-y-4">
+        <div>
+          <label htmlFor="password" className="block text-sm font-medium">
+            Senha de login
+          </label>
+          <input
+            id="password"
+            type="password"
+            className="mt-1 w-full rounded-md border px-3 py-2"
+            placeholder="••••••••"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="current-password"
+          />
+        </div>
 
-      <button
-        onClick={onDelete}
-        disabled={loading || password.length < 6}
-        className="mt-4 w-full rounded bg-red-600 py-2 text-white hover:bg-red-700 disabled:opacity-50"
-      >
-        {loading ? 'Excluindo…' : 'Excluir conta'}
-      </button>
+        {err && <p className="text-sm text-red-600">{err}</p>}
+        {msg && <p className="text-sm text-green-700">{msg}</p>}
 
-      {msg && (
-        <p
-          className={`mt-3 text-sm ${
-            msg.toLowerCase().includes('sucesso') ? 'text-emerald-700' : 'text-red-700'
-          }`}
-        >
-          {msg}
-        </p>
-      )}
+        <div className="flex items-center gap-3">
+          <button
+            type="submit"
+            disabled={!password || submitting}
+            className="rounded-md bg-red-600 px-4 py-2 text-white disabled:opacity-60"
+          >
+            {submitting ? 'Excluindo…' : 'Excluir conta'}
+          </button>
+          <Link href="/settings" className="rounded-md border px-4 py-2">
+            Cancelar
+          </Link>
+        </div>
+      </form>
+
+      <hr className="my-6" />
+      <p className="text-xs text-slate-500">
+        Dica: se preferir, você pode desativar sua conta ao invés de excluir permanentemente.
+      </p>
     </main>
   );
 }

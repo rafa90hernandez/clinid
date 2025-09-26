@@ -53,23 +53,11 @@ function formatPhoneBR(raw: string) {
   if (d.length <= 7) return `(${dd}) ${nine} ${p1}`;
   return `(${dd}) ${nine} ${p1}-${p2}`;
 }
-function cpfLast2Masked(cpf: string | null | undefined): string {
-  const digits = onlyDigits(cpf ?? '');
-  if (digits.length !== 11) return 'XXX.XXX.XXX-**';
-  const last2 = digits.slice(-2);
-  return `XXX.XXX.XXX-${last2}`;
-}
 function isSex(v: unknown): v is Exclude<SexOption, ''> {
   return v === 'M' || v === 'F';
 }
 function isBloodType(v: unknown): v is Exclude<BloodTypeOption, ''> {
   return typeof v === 'string' && (BLOOD_TYPES as readonly string[]).includes(v);
-}
-function splitFullName(full: string): { first: string; last: string } {
-  const parts = full.trim().split(/\s+/);
-  if (parts.length === 0) return { first: '', last: '' };
-  if (parts.length === 1) return { first: parts[0], last: '' };
-  return { first: parts[0], last: parts.slice(1).join(' ') };
 }
 
 /* =======================
@@ -83,14 +71,6 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
-
-  // somente leitura
-  const [name, setName] = useState('');
-  const [cpfMasked, setCpfMasked] = useState('');
-
-  // Também manter first/last em memória para enviar no PUT
-  const [firstNameRO, setFirstNameRO] = useState<string>(''); // read-only (vindos da API)
-  const [lastNameRO, setLastNameRO] = useState<string>('');
 
   // seletores
   const [sex, setSex] = useState<SexOption>(EMPTY_SEX);
@@ -126,10 +106,11 @@ export default function ProfilePage() {
         setLoading(true);
         setErr(null);
 
-        const res = await apiGet<ProfileResponse>('/me/profile');
-        const data = res.data ?? {};
+        const data: Partial<ProfileResponse> =
+          (await apiGet<ProfileResponse>('/me/profile')) ?? {};
 
         if (!mounted) return;
+
         // Clínicos
         setSex(isSex(data.sex) ? data.sex : EMPTY_SEX);
         setBloodType(isBloodType(data.bloodType) ? data.bloodType : EMPTY_BLOOD);
@@ -154,7 +135,7 @@ export default function ProfilePage() {
 
         setHasData(anyData);
         setIsEditing(!anyData); // se já tem dados, começa travado; senão, modo edição
-      } catch (e) {
+      } catch (e: unknown) {
         setErr(e instanceof Error ? e.message : 'Falha ao carregar perfil.');
       } finally {
         if (mounted) setLoading(false);
@@ -189,23 +170,13 @@ export default function ProfilePage() {
     setOkMsg(null);
 
     try {
-      // O backend exige first_name e last_name.
-      // Usamos os campos vindos da API; se vier só "name", fazemos split.
-      let firstToSend = firstNameRO;
-      let lastToSend = lastNameRO;
-
-      if (!firstToSend && !lastToSend && name.trim()) {
-        const { first, last } = splitFullName(name.trim());
-        firstToSend = first;
-        lastToSend = last;
-      }
-
       const phoneDigits = onlyDigits(emgPhone);
 
       // Payload em snake_case como o backend espera
       const payload = {
-        first_name: firstToSend || '',  // strings (validador exige string)
-        last_name: lastToSend || '',
+        // Se o backend exigir first/last, por ora envia strings vazias
+        first_name: '',
+        last_name: '',
         sex: sex || null,
         blood_type: bloodType || null,
         allergies,
@@ -223,7 +194,7 @@ export default function ProfilePage() {
       setIsEditing(false);
 
       setTimeout(() => router.replace('/'), 600);
-    } catch (e) {
+    } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Falha ao salvar. Tente novamente.');
     } finally {
       setSaving(false);

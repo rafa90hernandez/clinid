@@ -51,7 +51,7 @@ export default function ForgotPage() {
       const res = await apiPost<ForgotResponseLoose>('/accounts/forgot', { email: email.trim() });
 
       // Suporta retorno embrulhado { ok, status, data, response } ou direto
-      const data = isWrapped<ForgotResponseLoose>(res) ? res.data : res;
+      const data = isWrapped<ForgotResponseLoose>(res) ? res : res;
       const resetUrl = pickResetUrl(data);
 
       setMsg(

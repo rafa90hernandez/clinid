@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { ApiError, apiGet } from '@/lib/api'; // Importe ApiError
 import { Logo } from '@/components/logo';
 import BottomNav from '@/components/BottomNav';
@@ -20,7 +19,6 @@ type ProfileResponse = {
 // Por enquanto, vamos assumir que ele busca o perfil do usuário para exibir nome/CPF.
 
 export default function HistoryPage() {
-  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [profileData, setProfileData] = useState<ProfileResponse | null>(null);
   const [error, setError] = useState<string | null>(null);

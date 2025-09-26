@@ -1,9 +1,12 @@
+// web/src/app/clinical-register/page.tsx
+
 'use client';
 import { Logo } from '@/components/logo';
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { apiGet, apiPut, ApiError } from '@/lib/api'; // Import ApiError
+import { apiGet, apiPut, ApiError } from '@/lib/api';
 import BottomNav from '@/components/BottomNav';
+import type { ProfileResponse } from '@/types/profile.d.ts'; // Importado ProfileResponse
 
 /* =======================
    Tipos / Constantes
@@ -19,19 +22,7 @@ const EMPTY_BLOOD: BloodTypeOption = '' as const;
 
 type ListItem = string;
 
-type ProfileResponse = {
-  name?: string | null;
-  cpf?: string | null;
-  sex?: 'M' | 'F' | null;
-  bloodType?: (typeof BLOOD_TYPES)[number] | null;
-  allergies?: string[] | null;
-  medications?: string[] | null;
-  diseases?: string[] | null;
-  surgeries?: string[] | null;
-  emergencyContactName?: string | null;
-  emergencyContactPhone?: string | null;
-  email?: string; // Adicionado para exibir no exemplo, se vier da API
-};
+// ProfileResponse é importado de '@/types/profile.d.ts'
 
 function isSex(v: unknown): v is Exclude<SexOption, ''> {
   return v === 'M' || v === 'F';
@@ -47,7 +38,6 @@ function onlyDigits(s: string) {
   return s.replace(/\D/g, '');
 }
 function formatPhoneBR(raw: string) {
-  // (DD) 9 9999-9999
   const d = onlyDigits(raw).slice(0, 11);
   const dd = d.slice(0, 2);
   const nine = d.slice(2, 3);
@@ -66,9 +56,10 @@ export default function ClinicalRegisterPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  // somente leitura
-  const [name, setName] = useState('');
-  const [cpf, setCpf] = useState('');
+  // somente leitura - firstName/lastName vêm de ProfileResponse, CPF de outro lugar (MeResponse?)
+  const [firstName, setFirstName] = useState(''); // Alterado de 'name'
+  const [lastName, setLastName] = useState('');   // Novo estado para lastName
+  const [cpf] = useState(''); // Se o CPF for exibido, ele precisa vir de outra API (ex: /me)
 
   // seletores
   const [sex, setSex] = useState<SexOption>(EMPTY_SEX);
@@ -100,14 +91,14 @@ export default function ClinicalRegisterPage() {
 
     const fetchProfile = async () => {
       try {
-        // apiGet lança ApiError para status não-2xx ou redireciona 401
-        // Se esta linha não lançar erro, 'data' é ProfileResponse
         const data = await apiGet<ProfileResponse>('/me/profile');
         if (!mounted) return;
 
-        // Se chegamos aqui, o profile foi carregado com sucesso (status 2xx)
-        setName(data.name ?? '');
-        setCpf(data.cpf ?? '');
+        setFirstName(data.firstName ?? ''); // Usando firstName
+        setLastName(data.lastName ?? '');   // Usando lastName
+        // O CPF não vem na ProfileResponse do `profiles.service.ts::getMine`.
+        // Se você precisar exibi-lo aqui, ele deve ser buscado do `/me` endpoint (MeResponse).
+        // setCpf(data.cpf ?? ''); // Esta linha deve ser removida ou adaptada.
 
         setSex(isSex(data.sex) ? data.sex : EMPTY_SEX);
         setBloodType(isBloodType(data.bloodType) ? data.bloodType : EMPTY_BLOOD);
@@ -121,6 +112,8 @@ export default function ClinicalRegisterPage() {
         setEmgPhone(data.emergencyContactPhone ? formatPhoneBR(data.emergencyContactPhone) : '');
 
         const anyData =
+          !!data.firstName || // Verifica se firstName existe
+          !!data.lastName ||  // Verifica se lastName existe
           isSex(data.sex) ||
           isBloodType(data.bloodType) ||
           (Array.isArray(data.allergies) && data.allergies.length > 0) ||
@@ -130,23 +123,21 @@ export default function ClinicalRegisterPage() {
           !!(data.emergencyContactName && data.emergencyContactName.trim()) ||
           !!(data.emergencyContactPhone && data.emergencyContactPhone.trim());
 
+
         setHasData(anyData);
-        setIsEditing(!anyData); // Se não há dados, começa editando
+        setIsEditing(!anyData);
       } catch (err) {
         if (!mounted) return;
         if (err instanceof ApiError) {
           if (err.status === 404) {
-            // 404 → ainda não tem cadastro clínico (deixa tudo vazio)
             console.log('Nenhum perfil clínico encontrado. Começando novo registro.');
             setHasData(false);
-            setIsEditing(true); // Permite ao usuário criar um novo perfil
-          } else if (err.status !== 401) { // 401 já é tratado com redirecionamento em apiGet
+            setIsEditing(true);
+          } else if (err.status !== 401) {
             console.error(`Erro da API (${err.status}):`, err.message);
-            // Poderia mostrar uma mensagem de erro genérica na UI, se desejar
           }
         } else {
           console.error('Erro desconhecido ou de rede ao carregar perfil:', err);
-          // Poderia mostrar uma mensagem de erro de rede na UI
         }
       } finally {
         if (mounted) setLoading(false);
@@ -163,8 +154,6 @@ export default function ClinicalRegisterPage() {
   const canSave = useMemo(() => !saving && isEditing, [saving, isEditing]);
   const disabled = !isEditing;
 
-  // add/remove item helpers
-  // O setter aqui é para a LISTA (ex: setAllergies), não para o input temporário (ex: setAllergyInput)
   const addItem = (value: string, list: ListItem[], setter: (v: ListItem[]) => void) => {
     if (disabled) return;
     const v = value.trim();
@@ -183,8 +172,11 @@ export default function ClinicalRegisterPage() {
     try {
       const phoneDigits = onlyDigits(emgPhone);
 
-      // API espera snake_case + consent:boolean
       const payload = {
+        // firstName e lastName devem ser enviados aqui se você permitir a edição deles.
+        // O `profiles.service.ts::upsertMine` espera `dto.first_name` e `dto.last_name`.
+        first_name: firstName || '', // Enviar o firstName atual
+        last_name: lastName || '',   // Enviar o lastName atual
         sex: sex || null,
         blood_type: bloodType || null,
         allergies,
@@ -194,10 +186,8 @@ export default function ClinicalRegisterPage() {
         emergency_contact_name: emgName || null,
         emergency_contact_phone: phoneDigits || null,
         consent: true,
-      } as const;
+      };
 
-      // apiPut também lança ApiError em caso de falha.
-      // Se esta linha não lançar erro, a operação foi bem-sucedida.
       await apiPut<unknown>('/me/profile', payload);
 
       alert('Cadastro clínico salvo com sucesso!');
@@ -215,10 +205,11 @@ export default function ClinicalRegisterPage() {
     }
   }
 
+  const fullName = `${firstName} ${lastName}`.trim();
+
   if (loading) {
     return (
       <main className="relative min-h-dvh bg-[#E6EBFF] p-6 pb-24">
-        {/* logo de fundo */}
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <Logo className="opacity-30"/>
         </div>
@@ -230,7 +221,6 @@ export default function ClinicalRegisterPage() {
 
   return (
     <main className="relative min-h-dvh bg-[#E6EBFF] p-6 pb-24">
-      {/* logo de fundo centralizado 360x150 / 30% */}
       <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
         <Logo />
       </div>
@@ -238,10 +228,10 @@ export default function ClinicalRegisterPage() {
       <div className="relative z-10 mx-auto w-full max-w-md">
         <h1 className="mb-6 text-center text-lg font-semibold">Cadastro Clínico</h1>
 
-        {/* nome/cpf + ações */}
         <div className="mb-3 flex items-start justify-between">
           <div className="text-sm">
-            <div>{name || '—'}</div>
+            <div>{fullName || '—'}</div>
+            {/* CPF ainda precisa ser populado de outra fonte, como o /me endpoint */}
             <div className="text-slate-600">CPF: {cpf || '—'}</div>
           </div>
           <div className="text-xs">
@@ -300,7 +290,7 @@ export default function ClinicalRegisterPage() {
           value={allergyInput}
           onChange={setAllergyInput}
           list={allergies}
-          onAdd={() => { addItem(allergyInput, allergies, setAllergies); setAllergyInput(''); }} // CORRIGIDO
+          onAdd={() => { addItem(allergyInput, allergies, setAllergies); setAllergyInput(''); }}
           onRemove={(i) => removeItem(i, allergies, setAllergies)}
           maxItems={maxItems}
           disabled={disabled}
@@ -313,7 +303,7 @@ export default function ClinicalRegisterPage() {
           value={medInput}
           onChange={setMedInput}
           list={medications}
-          onAdd={() => { addItem(medInput, medications, setMedications); setMedInput(''); }} // CORRIGIDO
+          onAdd={() => { addItem(medInput, medications, setMedications); setMedInput(''); }}
           onRemove={(i) => removeItem(i, medications, setMedications)}
           maxItems={maxItems}
           disabled={disabled}
@@ -326,7 +316,7 @@ export default function ClinicalRegisterPage() {
           value={diseaseInput}
           onChange={setDiseaseInput}
           list={diseases}
-          onAdd={() => { addItem(diseaseInput, diseases, setDiseases); setDiseaseInput(''); }} // CORRIGIDO
+          onAdd={() => { addItem(diseaseInput, diseases, setDiseases); setDiseaseInput(''); }}
           onRemove={(i) => removeItem(i, diseases, setDiseases)}
           maxItems={maxItems}
           disabled={disabled}
@@ -339,7 +329,7 @@ export default function ClinicalRegisterPage() {
           value={surgeryInput}
           onChange={setSurgeryInput}
           list={surgeries}
-          onAdd={() => { addItem(surgeryInput, surgeries, setSurgeries); setSurgeryInput(''); }} // CORRIGIDO
+          onAdd={() => { addItem(surgeryInput, surgeries, setSurgeries); setSurgeryInput(''); }}
           onRemove={(i) => removeItem(i, surgeries, setSurgeries)}
           maxItems={maxItems}
           disabled={disabled}

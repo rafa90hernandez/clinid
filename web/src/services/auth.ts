@@ -15,7 +15,7 @@ export async function login(email: string, password: string) {
 
 export async function me() {
   const res = await apiGet<PublicUser>('/accounts/me');
-  return res.data ?? null;
+  return res ?? null;
 }
 
 export async function logout() {
