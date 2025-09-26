@@ -3,3 +3,6 @@ node_modules
 .env
 
 /generated/prisma
+
+# Ignorar arquivos de build do TypeScript
+*.tsbuildinfo
