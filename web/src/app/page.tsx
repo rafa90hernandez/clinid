@@ -23,7 +23,7 @@ interface MeResponse {
   // lastName?: string;
 }
 
-// PublicLinkResponse - Baseado no PublicLinkInfoResponseDto do backend
+// PublicLinkResponse - Baseado no PublicLinkInfoResponseDto do backend (que criamos juntos)
 // Este tipo representa o que esperamos receber do endpoint /me/public-link
 interface PublicLinkResponse {
   slug: string; // O segmento único do link público
@@ -52,15 +52,16 @@ export default function HomePage() {
         setError(null); // Limpa erros anteriores
 
         // Chamadas à API para os três endpoints
+        // NOTA: apiGet retorna o tipo diretamente, sem .data
         const meData = await apiGet<MeResponse>('/me');
         const profileData = await apiGet<ProfileResponse>('/me/profile');
         const publicLinkData = await apiGet<PublicLinkResponse>('/me/public-link');
 
         if (cancelled) return; // Se o componente foi desmontado, sai
 
-        setMe(meData);
-        setProfile(profileData);
-        setPublicLink(publicLinkData);
+        setMe(meData); // ATENÇÃO AQUI: meData é o objeto direto
+        setProfile(profileData); // ATENÇÃO AQUI: profileData é o objeto direto
+        setPublicLink(publicLinkData); // ATENÇÃO AQUI: publicLinkData é o objeto direto
 
       } catch (err) {
         if (cancelled) return; // Se o componente foi desmontado, sai
@@ -68,7 +69,7 @@ export default function HomePage() {
         if (err instanceof ApiError) {
           // O apiGet já trata o redirecionamento para /login em caso de 401.
           // Aqui, tratamos outros erros da API, mas ignoramos 404 para links públicos
-          // já que o link pode não ter sido criado ainda.
+          // já que o link pode não ter sido criado ainda no backend.
           if (err.status === 404 && err.url?.includes('/me/public-link')) {
             console.log('Nenhum link público encontrado para o usuário.');
             setPublicLink(null); // Define como null se o link não existir
