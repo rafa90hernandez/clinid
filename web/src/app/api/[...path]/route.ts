@@ -89,7 +89,6 @@ async function proxyRequest(method: string, req: NextRequest, path: string[]): P
   }
 
   // Faz a requisição ao backend.
-  // CORREÇÃO AQUI: Removidos os backticks de 'upstream'
   const upstream = await fetch(url, {
     method,
     headers,
@@ -116,7 +115,7 @@ async function proxyRequest(method: string, req: NextRequest, path: string[]): P
 async function handleRequest(
   req: NextRequest,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  ctx: { params: { path: string[] } } // Tipagem melhorada para ctx.params
+  ctx: any // CORRIGIDO: Voltando para 'any' para evitar erro de tipagem do Next.js
 ): Promise<Response> {
   const { path } = ctx.params;
   const method = req.method;
