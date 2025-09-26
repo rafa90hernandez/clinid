@@ -164,6 +164,7 @@ export default function ClinicalRegisterPage() {
   const disabled = !isEditing;
 
   // add/remove item helpers
+  // O setter aqui é para a LISTA (ex: setAllergies), não para o input temporário (ex: setAllergyInput)
   const addItem = (value: string, list: ListItem[], setter: (v: ListItem[]) => void) => {
     if (disabled) return;
     const v = value.trim();
@@ -299,7 +300,7 @@ export default function ClinicalRegisterPage() {
           value={allergyInput}
           onChange={setAllergyInput}
           list={allergies}
-          onAdd={() => { addItem(allergyInput, allergies, setAllergyInput); }}
+          onAdd={() => { addItem(allergyInput, allergies, setAllergies); setAllergyInput(''); }} // CORRIGIDO
           onRemove={(i) => removeItem(i, allergies, setAllergies)}
           maxItems={maxItems}
           disabled={disabled}
@@ -312,7 +313,7 @@ export default function ClinicalRegisterPage() {
           value={medInput}
           onChange={setMedInput}
           list={medications}
-          onAdd={() => { addItem(medInput, medications, setMedInput); }}
+          onAdd={() => { addItem(medInput, medications, setMedications); setMedInput(''); }} // CORRIGIDO
           onRemove={(i) => removeItem(i, medications, setMedications)}
           maxItems={maxItems}
           disabled={disabled}
@@ -325,7 +326,7 @@ export default function ClinicalRegisterPage() {
           value={diseaseInput}
           onChange={setDiseaseInput}
           list={diseases}
-          onAdd={() => { addItem(diseaseInput, diseases, setDiseaseInput); }}
+          onAdd={() => { addItem(diseaseInput, diseases, setDiseases); setDiseaseInput(''); }} // CORRIGIDO
           onRemove={(i) => removeItem(i, diseases, setDiseases)}
           maxItems={maxItems}
           disabled={disabled}
@@ -338,7 +339,7 @@ export default function ClinicalRegisterPage() {
           value={surgeryInput}
           onChange={setSurgeryInput}
           list={surgeries}
-          onAdd={() => { addItem(surgeryInput, surgeries, setSurgeryInput); }}
+          onAdd={() => { addItem(surgeryInput, surgeries, setSurgeries); setSurgeryInput(''); }} // CORRIGIDO
           onRemove={(i) => removeItem(i, surgeries, setSurgeries)}
           maxItems={maxItems}
           disabled={disabled}
