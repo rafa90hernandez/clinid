@@ -1,127 +1,83 @@
 // web/src/lib/api.ts
 
-/** Base da API (same-origin + rewrite /api recomendado) */
-export const API_URL: string = (() => {
-  const envUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
-  return envUrl && envUrl.length > 0 ? envUrl : '/api';
-})();
+// Define a base URL para a sua API.
+// Pelas modificações que você fez (criando 'web/src/app/api/[...path]/route.ts'),
+// o ideal é usar um proxy através do Next.js API Route para evitar problemas de CORS no frontend.
+const API_BASE_URL = '/api'; // Aponta para o Next.js API Route (ex: /api/accounts/login)
 
-type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
-
-type RequestOpts = {
-  /** Headers extras se necessário */
-  headers?: Record<string, string>;
-  /**
-   * Por padrão enviamos credenciais (cookies) para o backend,
-   * pois a autenticação é via cookie httpOnly.
-   */
-  credentials?: RequestInit['credentials']; // default: 'include'
-  /**
-   * Caso MUITO específico: forçar Authorization Bearer.
-   * Evite usar — sua API já autentica por cookie httpOnly.
-   */
-  bearerToken?: string;
-  /** Corpo já serializado (quando não usar json) */
-  body?: BodyInit | null;
-  /** Se você quiser enviar JSON, use 'json' */
-  json?: unknown;
-  /** Método HTTP (override) */
-  method?: HttpMethod;
-};
-
-interface ApiError extends Error {
-  status?: number;
-  body?: unknown;
-}
-
-function parseJsonSafely(text: string): unknown {
-  try {
-    return text ? JSON.parse(text) : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/** Helper principal de fetch */
-export async function apiRequest<T = unknown>(
+// Função utilitária genérica para fazer requisições à API
+async function requestApi<T>(
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
-  opts: RequestOpts = {},
-): Promise<{ ok: boolean; status: number; data: T | null; response: Response }> {
-  const {
-    headers,
-    credentials = 'include',
-    bearerToken,
-    body,
-    json,
-    method,
-  } = opts;
+  body?: object,
+  options?: RequestInit,
+): Promise<T> {
+  // Pega o token do localStorage se estiver no ambiente do navegador
+  const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
 
-  const url = `${API_URL}${path.startsWith('/') ? path : `/${path}`}`;
-
-  const finalHeaders: Record<string, string> = {
-    ...(json ? { 'Content-Type': 'application/json' } : {}),
-    ...(headers ?? {}),
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+    ...options?.headers, // Mantém quaisquer outros cabeçalhos passados
   };
 
-  if (bearerToken) {
-    finalHeaders.Authorization = `Bearer ${bearerToken}`;
+  // Se houver um token, adicione o cabeçalho Authorization
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const res = await fetch(url, {
-    method: method ?? (json ? 'POST' : 'GET'),
-    credentials,
-    headers: finalHeaders,
-    body: json ? JSON.stringify(json) : body,
-    redirect: 'follow',
+  // Faz a requisição usando fetch
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+    ...options,
   });
 
-  // tenta ler JSON; se falhar, deixa null
-  let data: T | null = null;
-  let raw = '';
-  try {
-    data = (await res.clone().json()) as T;
-  } catch {
-    try {
-      raw = await res.clone().text();
-      data = parseJsonSafely(raw) as T | null;
-    } catch {
-      data = null;
-    }
-  }
-
-  if (!res.ok) {
-    // extrai "message" do backend se houver
-    let message = `HTTP ${res.status}`;
-    const maybeObj = data as Record<string, unknown> | null;
-    if (maybeObj && typeof maybeObj === 'object') {
-      const m = maybeObj['message'];
-      if (typeof m === 'string' && m.trim().length > 0) {
-        message = m;
+  // Se a requisição não for bem-sucedida (status 4xx ou 5xx)
+  if (!response.ok) {
+    // Se for 401 Unauthorized e houver um token, o token pode estar inválido.
+    // Limpa e redireciona para login.
+    if (response.status === 401 && token) {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('access_token');
+        // Você pode adicionar um redirecionamento aqui, por exemplo:
+        // window.location.href = '/login';
       }
     }
-
-    const err: ApiError = Object.assign(new Error(message), {
-      status: res.status,
-      body: data ?? raw,
-    });
-    throw err;
+    // Tenta ler a mensagem de erro do corpo da resposta, caso exista
+    const errorData = await response.json().catch(() => ({ message: 'Erro desconhecido na API' }));
+    throw new Error(errorData.message || `Erro na API: ${response.status} ${response.statusText}`);
   }
 
-  return { ok: true, status: res.status, data, response: res };
+  // Se a resposta for 204 No Content, não há corpo para parsear
+  if (response.status === 204) {
+    return null as T;
+  }
+
+  // Retorna o corpo da resposta como JSON
+  return response.json() as Promise<T>;
 }
 
-/** Atalhos verbosos para ergonomia */
-export const apiGet = <T>(path: string, opts?: Omit<RequestOpts, 'method' | 'json'>) =>
-  apiRequest<T>(path, { ...opts, method: 'GET' });
+// Funções utilitárias para cada método HTTP
+export const apiGet = <T>(path: string, options?: RequestInit) => requestApi<T>('GET', path, undefined, options);
+export const apiPost = <T>(path: string, body: object, options?: RequestInit) => requestApi<T>('POST', path, body, options);
+export const apiPut = <T>(path: string, body: object, options?: RequestInit) => requestApi<T>('PUT', path, body, options);
+export const apiPatch = <T>(path: string, body: object, options?: RequestInit) => requestApi<T>('PATCH', path, body, options);
+export const apiDelete = <T>(path: string, options?: RequestInit) => requestApi<T>('DELETE', path, undefined, options);
 
-export const apiPost = <T>(path: string, json?: unknown, opts?: Omit<RequestOpts, 'method'>) =>
-  apiRequest<T>(path, { ...opts, method: 'POST', json });
+// Função específica para a rota de login que salva o token no localStorage
+export async function apiLogin(email: string, password: string): Promise<{ access_token: string }> {
+  // Usa apiPost para fazer a requisição de login
+  const responseData = await apiPost<{ access_token?: string }>('/accounts/login', { email, password });
 
-export const apiPut = <T>(path: string, json?: unknown, opts?: Omit<RequestOpts, 'method'>) =>
-  apiRequest<T>(path, { ...opts, method: 'PUT', json });
-
-export const apiPatch = <T>(path: string, json?: unknown, opts?: Omit<RequestOpts, 'method'>) =>
-  apiRequest<T>(path, { ...opts, method: 'PATCH', json });
-
-export const apiDelete = <T>(path: string, json?: unknown, opts?: Omit<RequestOpts, 'method'>) =>
-  apiRequest<T>(path, { ...opts, method: 'DELETE', json });
+  // Verifica se o token foi recebido e o salva
+  if (responseData && responseData.access_token) {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('access_token', responseData.access_token);
+    }
+    return { access_token: responseData.access_token };
+  } else {
+    // Se o login foi 200 OK mas o token não veio, algo está errado
+    throw new Error('Login bem-sucedido, mas o token de acesso não foi encontrado na resposta da API.');
+  }
+}

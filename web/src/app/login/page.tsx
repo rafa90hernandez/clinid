@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { apiPost } from '@/lib/api';
+import { apiLogin } from '@/lib/api'; // Agora importamos a função apiLogin
 import { Logo } from '@/components/logo';
 
 export default function LoginPage() {
@@ -23,16 +23,16 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      // Faz login (cookie httpOnly vem da API)
-      await apiPost<unknown>('/accounts/login', {
-        email: email.trim(),
-        password,
-      });
-      router.replace('/'); // dashboard
+      // Usa a nova função apiLogin, que já salva o token no localStorage.
+      // Não precisamos mais esperar um cookie aqui.
+      await apiLogin(email.trim(), password);
+      router.replace('/'); // Redireciona para o dashboard ou página inicial
     } catch (err) {
-      const msg =
-        err instanceof Error ? err.message : 'Não foi possível conectar ao servidor.';
-      setErrorMsg(msg || 'Credenciais inválidas');
+      let msg = 'Não foi possível conectar ao servidor.';
+      if (err instanceof Error) {
+        msg = err.message;
+      }
+      setErrorMsg(msg || 'Credenciais inválidas.');
     } finally {
       setLoading(false);
     }
