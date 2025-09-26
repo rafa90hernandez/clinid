@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import Image from 'next/image';
+import { Logo } from '@/components/logo';
 import Link from 'next/link';
 import QRCode from 'react-qr-code';
 import { apiGet } from '@/lib/api';
@@ -126,14 +126,7 @@ export default function PrintEmergencyCardPage() {
         aria-label="Cartão de emergência"
       >
         <div className="mb-3 flex items-center gap-3">
-          <Image
-            src="/logo.png"
-            alt="ClinID"
-            width={42}
-            height={42}
-            priority
-            className="h-10 w-10"
-          />
+          <Logo />
           <div>
             <p className="text-xs leading-tight text-slate-500">+ClinID</p>
             <p className="text-[11px] leading-tight text-slate-500">Soluções emergenciais</p>

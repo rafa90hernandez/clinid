@@ -1,12 +1,8 @@
-// web/src/app/profile/page.tsx
 'use client';
-
-import { useEffect, useMemo, useState } from 'react';
 import { Logo } from '@/components/logo';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { apiGet, apiPut } from '@/lib/api';
-import { useRequireAuth } from '@/lib/useRequireAuth';
 import BottomNav from '@/components/BottomNav';
 
 /* =======================
@@ -24,7 +20,8 @@ const EMPTY_BLOOD: BloodTypeOption = '' as const;
 type ListItem = string;
 
 type ProfileResponse = {
-  // Campos clínicos
+  name?: string | null;
+  cpf?: string | null;
   sex?: 'M' | 'F' | null;
   bloodType?: (typeof BLOOD_TYPES)[number] | null;
   allergies?: string[] | null;
@@ -35,8 +32,15 @@ type ProfileResponse = {
   emergencyContactPhone?: string | null;
 };
 
+function isSex(v: unknown): v is Exclude<SexOption, ''> {
+  return v === 'M' || v === 'F';
+}
+function isBloodType(v: unknown): v is Exclude<BloodTypeOption, ''> {
+  return typeof v === 'string' && (BLOOD_TYPES as readonly string[]).includes(v);
+}
+
 /* =======================
-   Utils
+   Máscaras
 ======================= */
 function onlyDigits(s: string) {
   return s.replace(/\D/g, '');
@@ -53,44 +57,17 @@ function formatPhoneBR(raw: string) {
   if (d.length <= 7) return `(${dd}) ${nine} ${p1}`;
   return `(${dd}) ${nine} ${p1}-${p2}`;
 }
-function cpfLast2Masked(cpf: string | null | undefined): string {
-  const digits = onlyDigits(cpf ?? '');
-  if (digits.length !== 11) return 'XXX.XXX.XXX-**';
-  const last2 = digits.slice(-2);
-  return `XXX.XXX.XXX-${last2}`;
-}
-function isSex(v: unknown): v is Exclude<SexOption, ''> {
-  return v === 'M' || v === 'F';
-}
-function isBloodType(v: unknown): v is Exclude<BloodTypeOption, ''> {
-  return typeof v === 'string' && (BLOOD_TYPES as readonly string[]).includes(v);
-}
-function splitFullName(full: string): { first: string; last: string } {
-  const parts = full.trim().split(/\s+/);
-  if (parts.length === 0) return { first: '', last: '' };
-  if (parts.length === 1) return { first: parts[0], last: '' };
-  return { first: parts[0], last: parts.slice(1).join(' ') };
-}
 
 /* =======================
    Página
 ======================= */
-export default function ProfilePage() {
-  const router = useRouter();
-  const { ready } = useRequireAuth();
-
+export default function ClinicalRegisterPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const [okMsg, setOkMsg] = useState<string | null>(null);
 
   // somente leitura
   const [name, setName] = useState('');
-  const [cpfMasked, setCpfMasked] = useState('');
-
-  // Também manter first/last em memória para enviar no PUT
-  const [firstNameRO, setFirstNameRO] = useState<string>(''); // read-only (vindos da API)
-  const [lastNameRO, setLastNameRO] = useState<string>('');
+  const [cpf, setCpf] = useState('');
 
   // seletores
   const [sex, setSex] = useState<SexOption>(EMPTY_SEX);
@@ -118,19 +95,40 @@ export default function ProfilePage() {
   const maxItems = 20;
 
   useEffect(() => {
-    if (!ready) return;
     let mounted = true;
 
     (async () => {
       try {
-        setLoading(true);
-        setErr(null);
-
         const res = await apiGet<ProfileResponse>('/me/profile');
-        const data = res.data ?? {};
-
         if (!mounted) return;
-        // Clínicos
+
+        // 401 → usuário não autenticado (mantenha a tela / ou redirecione conforme sua UX)
+        if (res.status === 401) {
+          setLoading(false);
+          return;
+        }
+
+        // 404 → ainda não tem cadastro clínico (deixa tudo vazio)
+        if (res.status === 404) {
+          setHasData(false);
+          setIsEditing(true);
+          setLoading(false);
+          return;
+        }
+
+        if (!res.ok || !res.data) {
+          // erro genérico (exibe vazio, mas habilita edição)
+          setHasData(false);
+          setIsEditing(true);
+          setLoading(false);
+          return;
+        }
+
+        const data = res.data;
+
+        setName(data.name ?? '');
+        setCpf(data.cpf ?? '');
+
         setSex(isSex(data.sex) ? data.sex : EMPTY_SEX);
         setBloodType(isBloodType(data.bloodType) ? data.bloodType : EMPTY_BLOOD);
 
@@ -153,18 +151,16 @@ export default function ProfilePage() {
           !!(data.emergencyContactPhone && data.emergencyContactPhone.trim());
 
         setHasData(anyData);
-        setIsEditing(!anyData); // se já tem dados, começa travado; senão, modo edição
-      } catch (e) {
-        setErr(e instanceof Error ? e.message : 'Falha ao carregar perfil.');
+        setIsEditing(!anyData);
       } finally {
         if (mounted) setLoading(false);
       }
-    })();
+    })().catch(() => setLoading(false));
 
     return () => {
       mounted = false;
     };
-  }, [ready]);
+  }, []);
 
   const canSave = useMemo(() => !saving && isEditing, [saving, isEditing]);
   const disabled = !isEditing;
@@ -185,27 +181,11 @@ export default function ProfilePage() {
   async function handleSave() {
     if (!canSave) return;
     setSaving(true);
-    setErr(null);
-    setOkMsg(null);
-
     try {
-      // O backend exige first_name e last_name.
-      // Usamos os campos vindos da API; se vier só "name", fazemos split.
-      let firstToSend = firstNameRO;
-      let lastToSend = lastNameRO;
-
-      if (!firstToSend && !lastToSend && name.trim()) {
-        const { first, last } = splitFullName(name.trim());
-        firstToSend = first;
-        lastToSend = last;
-      }
-
       const phoneDigits = onlyDigits(emgPhone);
 
-      // Payload em snake_case como o backend espera
+      // API espera snake_case + consent:boolean
       const payload = {
-        first_name: firstToSend || '',  // strings (validador exige string)
-        last_name: lastToSend || '',
         sex: sex || null,
         blood_type: bloodType || null,
         allergies,
@@ -217,24 +197,29 @@ export default function ProfilePage() {
         consent: true,
       } as const;
 
-      await apiPut('/me/profile', payload);
-      setOkMsg('Cadastro clínico salvo com sucesso.');
+      const res = await apiPut<unknown>('/me/profile', payload);
+
+      if (!res.ok) {
+        // feedback simples (você pode customizar por status)
+        alert(`Falha ao salvar (HTTP ${res.status}). Tente novamente.`);
+        return;
+        }
+      alert('Cadastro clínico salvo com sucesso!');
       setHasData(true);
       setIsEditing(false);
-
-      setTimeout(() => router.replace('/'), 600);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Falha ao salvar. Tente novamente.');
+    } catch {
+      alert('Falha ao salvar. Tente novamente.');
     } finally {
       setSaving(false);
     }
   }
 
-  if (!ready || loading) {
+  if (loading) {
     return (
       <main className="relative min-h-dvh bg-[#E6EBFF] p-6 pb-24">
+        {/* logo de fundo */}
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <Logo />
+          <Logo className="opacity-30"/>
         </div>
         <div className="relative z-10">Carregando…</div>
         <BottomNav />
@@ -244,7 +229,7 @@ export default function ProfilePage() {
 
   return (
     <main className="relative min-h-dvh bg-[#E6EBFF] p-6 pb-24">
-      {/* logo de fundo */}
+      {/* logo de fundo centralizado 360x150 / 30% */}
       <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
         <Logo />
       </div>
@@ -252,30 +237,31 @@ export default function ProfilePage() {
       <div className="relative z-10 mx-auto w-full max-w-md">
         <h1 className="mb-6 text-center text-lg font-semibold">Cadastro Clínico</h1>
 
-        {/* Ações */}
+        {/* nome/cpf + ações */}
         <div className="mb-3 flex items-start justify-between">
+          <div className="text-sm">
+            <div>{name || '—'}</div>
+            <div className="text-slate-600">CPF: {cpf || '—'}</div>
+          </div>
           <div className="text-xs">
             {hasData && !isEditing ? (
               <button
                 type="button"
                 onClick={() => setIsEditing(true)}
-                className="mr-2 underline"
+                className="underline mr-2"
                 title="Editar cadastro clínico"
               >
                 EDITAR
               </button>
             ) : (
-              <span className="mr-2 select-none text-slate-400">EDITANDO…</span>
+              <span className="text-slate-400 mr-2 select-none">EDITANDO…</span>
             )}
             /
-            <Link href="/settings/delete" className="ml-2 underline text-red-600" title="Excluir conta">
+            <Link href="/settings/delete" className="underline ml-2" title="Excluir conta">
               EXCLUIR
             </Link>
           </div>
         </div>
-
-        {err && <p className="mb-3 text-sm text-red-600">{err}</p>}
-        {okMsg && <p className="mb-3 text-sm text-green-600">{okMsg}</p>}
 
         {/* Sexo / Tipo sanguíneo */}
         <div className="mb-4 grid grid-cols-[auto_1fr_auto_1fr] items-center gap-x-3 gap-y-2">
@@ -288,13 +274,11 @@ export default function ProfilePage() {
           >
             <option value="">Selecione…</option>
             {SEX_OPTIONS.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
+              <option key={s} value={s}>{s}</option>
             ))}
           </select>
 
-          <label className="text-right text-sm">Tipo Sanguíneo:</label>
+          <label className="text-sm text-right">Tipo Sanguíneo:</label>
           <select
             className="rounded-md border bg-white px-3 py-2 text-sm disabled:bg-slate-100"
             value={bloodType}
@@ -303,9 +287,7 @@ export default function ProfilePage() {
           >
             <option value="">Selecione…</option>
             {BLOOD_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
+              <option key={t} value={t}>{t}</option>
             ))}
           </select>
         </div>
@@ -317,10 +299,7 @@ export default function ProfilePage() {
           value={allergyInput}
           onChange={setAllergyInput}
           list={allergies}
-          onAdd={() => {
-            addItem(allergyInput, allergies, setAllergies);
-            setAllergyInput('');
-          }}
+          onAdd={() => { addItem(allergyInput, allergies, setAllergies); setAllergyInput(''); }}
           onRemove={(i) => removeItem(i, allergies, setAllergies)}
           maxItems={maxItems}
           disabled={disabled}
@@ -333,10 +312,7 @@ export default function ProfilePage() {
           value={medInput}
           onChange={setMedInput}
           list={medications}
-          onAdd={() => {
-            addItem(medInput, medications, setMedications);
-            setMedInput('');
-          }}
+          onAdd={() => { addItem(medInput, medications, setMedications); setMedInput(''); }}
           onRemove={(i) => removeItem(i, medications, setMedications)}
           maxItems={maxItems}
           disabled={disabled}
@@ -349,10 +325,7 @@ export default function ProfilePage() {
           value={diseaseInput}
           onChange={setDiseaseInput}
           list={diseases}
-          onAdd={() => {
-            addItem(diseaseInput, diseases, setDiseases);
-            setDiseaseInput('');
-          }}
+          onAdd={() => { addItem(diseaseInput, diseases, setDiseases); setDiseaseInput(''); }}
           onRemove={(i) => removeItem(i, diseases, setDiseases)}
           maxItems={maxItems}
           disabled={disabled}
@@ -365,10 +338,7 @@ export default function ProfilePage() {
           value={surgeryInput}
           onChange={setSurgeryInput}
           list={surgeries}
-          onAdd={() => {
-            addItem(surgeryInput, surgeries, setSurgeries);
-            setSurgeryInput('');
-          }}
+          onAdd={() => { addItem(surgeryInput, surgeries, setSurgeries); setSurgeryInput(''); }}
           onRemove={(i) => removeItem(i, surgeries, setSurgeries)}
           maxItems={maxItems}
           disabled={disabled}
@@ -473,7 +443,7 @@ function FieldWithAdder(props: {
               key={`${item}-${i}`}
               className="flex items-center justify-between rounded-md border bg-white px-3 py-2 text-sm"
             >
-              <span className="truncate">• {item}</span>
+              <span className="truncate">{item}</span>
               <button
                 type="button"
                 className="ml-2 text-slate-500 hover:text-red-600 disabled:opacity-50"

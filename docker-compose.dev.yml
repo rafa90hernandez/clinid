@@ -28,7 +28,7 @@ services:
     volumes:
       - ./api:/usr/src/app
       - /usr/src/app/node_modules
-    command: sh -c "npm install && npx prisma generate && npm run build && node dist/main.js"
+    command: sh -c "npx prisma migrate deploy && npm run build && node dist/main.js"
 
 
   web:
@@ -41,8 +41,9 @@ services:
     ports:
       - "3000:3000"
     environment:
-      NEXT_PUBLIC_API_URL: /api
-      NODE_ENV: development 
+      INTERNAL_API_BASE: "http://api:3001"
+      NEXT_PUBLIC_API_URL: "/api"
+      NODE_ENV: development
     volumes:
       - ./web:/usr/src/app
       - /usr/src/app/node_modules

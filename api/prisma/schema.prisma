@@ -7,39 +7,28 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum Role {
-  USER
-}
-
-enum PublicLinkStatus {
-  active
-  revoked
-}
-
 model User {
-  id           String   @id @default(uuid()) @db.Uuid
-  email        String   @unique
-  passwordHash String
-  role         Role     @default(USER)
-  isDeleted    Boolean  @default(false)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                                              String               @id @default(uuid()) @db.Uuid
+  email                                           String               @unique
+  passwordHash                                    String
+  role                                            Role                 @default(USER)
+  isDeleted                                       Boolean              @default(false)
+  createdAt                                       DateTime             @default(now())
+  updatedAt                                       DateTime             @updatedAt
 
-  clinicalProfile     ClinicalProfile?
-  publicCredential    PublicCredential?
-  publicLinks         PublicLink[]
-  // === duas relações distintas com ClinicalHistory ===
-  clinicalHistory     ClinicalHistory[]    @relation("OwnerHistory")
-  changedHistory      ClinicalHistory[]    @relation("ChangedByUser")
-  // ===================================================
-  passwordResetTokens PasswordResetToken[]
-  auditLogs           AuditLog[]           @relation("ActorLogs")
+  // Relações
+  AuditLog                                        AuditLog[]
+  ClinicalHistory_ClinicalHistory_changedByToUser ClinicalHistory[]    @relation("ClinicalHistory_changedByToUser")
+  histories                                       ClinicalHistory[]
+  clinicalProfile                                 ClinicalProfile?
+  resetTokens                                     PasswordResetToken[]
+  publicCredentials                               PublicCredential?
+  publicLinks                                     PublicLink[]
 }
 
 model ClinicalProfile {
   id                    String   @id @default(uuid()) @db.Uuid
   userId                String   @unique @db.Uuid
-  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   firstName             String
   lastName              String
   sex                   String?
@@ -53,42 +42,44 @@ model ClinicalProfile {
   consentAt             DateTime
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model PublicCredential {
-  userId    String   @id @db.Uuid
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String    @id @db.Uuid
   pinHash   String
-  updatedAt DateTime @updatedAt
+  updatedAt DateTime  @updatedAt
+  consentAt DateTime?            // <— única linha válida de consentAt (opcional)
+  createdAt DateTime  @default(now())
+
+  // Relações
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model PublicLink {
   id        String           @id @default(uuid()) @db.Uuid
   userId    String           @db.Uuid
-  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   slug      String           @unique
   status    PublicLinkStatus
   createdAt DateTime         @default(now())
   revokedAt DateTime?
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
 
 model ClinicalHistory {
-  id String @id @default(uuid()) @db.Uuid
+  id                                   String   @id @default(uuid()) @db.Uuid
+  userId                               String   @db.Uuid
+  snapshot                             Json
+  changedAt                            DateTime @default(now())
+  changedBy                            String?  @db.Uuid
+  note                                 String?
 
-  // dono do histórico (quem é o "paciente" do perfil)
-  userId String @db.Uuid
-  user   User   @relation("OwnerHistory", fields: [userId], references: [id], onDelete: Cascade)
-
-  snapshot  Json
-  changedAt DateTime @default(now())
-
-  // quem realizou a alteração (opcional)
-  changedBy     String? @db.Uuid
-  changedByUser User?   @relation("ChangedByUser", fields: [changedBy], references: [id])
-
-  note String?
+  // Relações
+  // ALTERAÇÃO AQUI: Adicionado onDelete: SetNull para permitir a exclusão do User
+  User_ClinicalHistory_changedByToUser User?    @relation("ClinicalHistory_changedByToUser", fields: [changedBy], references: [id], onDelete: SetNull)
+  user                                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, changedAt])
 }
@@ -96,11 +87,11 @@ model ClinicalHistory {
 model PasswordResetToken {
   id        String    @id @default(uuid()) @db.Uuid
   userId    String    @db.Uuid
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   tokenHash String
   expiresAt DateTime
   usedAt    DateTime?
   createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, expiresAt])
 }
@@ -108,13 +99,24 @@ model PasswordResetToken {
 model AuditLog {
   id        String   @id @default(uuid()) @db.Uuid
   actorId   String?  @db.Uuid
-  actor     User?    @relation("ActorLogs", fields: [actorId], references: [id])
   action    String
   target    String?
   ip        String?  @db.Inet
   details   Json?
   createdAt DateTime @default(now())
+  // Relações
+  // ALTERAÇÃO AQUI: Adicionado onDelete: SetNull para permitir a exclusão do User
+  User      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
 
-  @@index([createdAt])
   @@index([action])
+  @@index([createdAt])
+}
+
+enum PublicLinkStatus {
+  active
+  revoked
+}
+
+enum Role {
+  USER
 }

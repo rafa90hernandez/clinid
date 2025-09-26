@@ -19,8 +19,8 @@ import { HistoryModule } from './history/history.module';
     PublicViewModule,
     HistoryModule,
     ThrottlerModule.forRoot([
-      { name: 'default', ttl: 60_000, limit: 60 },
-      { name: 'public', ttl: 60_000, limit: 10 },
+      { name: 'default', ttl: 60_000, limit: 1000 }, // De 60 para 1000 requisições/min
+      { name: 'public', ttl: 60_000, limit: 100 }, // De 10 para 100 requisições/min
     ]),
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

@@ -2,9 +2,10 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
-import { apiGet, apiPost, apiPatch } from '@/lib/api';
-import { useRequireAuth } from '@/lib/useRequireAuth';
+import { Logo } from '@/components/logo';
+import { useRouter } from 'next/navigation';
+import { apiPost, apiPut } from '@/lib/api';
+import BottomNav from '@/components/BottomNav';
 
 type PublicLink = {
   id: string;
@@ -14,212 +15,185 @@ type PublicLink = {
   revokedAt: string | null;
 };
 
-// Aceita tanto “puro” quanto “envelopado”
-type ApiBox<T> = { ok: boolean; status: number; data: T | null; response: Response };
-function unwrap<T>(res: T | ApiBox<T>): T | null {
-  if (res && typeof res === 'object' && 'ok' in res && 'data' in res) {
-    return (res as ApiBox<T>).data ?? null;
-  }
-  return (res as T) ?? null;
+// Erro padronizado lançado pelas helpers api*
+type ApiErrorShape = { status: number; body?: unknown; message?: string };
+function isApiError(e: unknown): e is ApiErrorShape {
+  return typeof e === 'object' && e !== null && 'status' in e && typeof (e as { status: unknown }).status === 'number';
 }
 
-export default function QrManagerPage() {
-  const { ready } = useRequireAuth(); // garante que só carrega quando autenticado
+export default function QrPage() { // Componente funcional para a página /qr
+  const router = useRouter();
 
-  const [link, setLink] = useState<PublicLink | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const [pin, setPin] = useState('');
+  const [confirmPin, setConfirmPin] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [consent, setConsent] = useState(false);
+  const [ok, setOk] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null); // Estado para mensagens de erro
+  const [loading, setLoading] = useState(false); // Estado para controle de carregamento
 
-  // Base pública para montar a URL do slug
-  const publicBase = useMemo(() => {
-    if (typeof window !== 'undefined') return window.location.origin;
-    return process.env.NEXT_PUBLIC_WEB_BASE_URL || 'http://localhost:3000';
-  }, []);
+  const onlyDigits = (s: string) => s.replace(/\D/g, '').slice(0, 6);
 
-  const publicUrl = link ? `${publicBase}/p/${link.slug}` : '';
-
-  async function load() {
-    setErr(null);
-    try {
-      const res = await apiGet<PublicLink | null>('/me/public-link');
-      const data = unwrap<PublicLink | null>(res);
-      setLink(data);
-    } catch {
-      setErr('Falha ao carregar link público. Faça login novamente.');
-      setLink(null);
-    }
-  }
-
-  async function generate() {
-    setLoading(true);
-    setErr(null);
-    try {
-      const res = await apiPost<PublicLink | null>('/me/public-link', {});
-      const data = unwrap<PublicLink | null>(res);
-      setLink(data);
-    } catch {
-      setErr('Erro ao gerar link.');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  // “Regerar” = criar um novo (o backend deve invalidar o antigo)
-  async function regenerate() {
-    setLoading(true);
-    setErr(null);
-    try {
-      const res = await apiPost<PublicLink | null>('/me/public-link', {});
-      const data = unwrap<PublicLink | null>(res);
-      setLink(data);
-    } catch {
-      setErr('Erro ao regerar link.');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function revoke() {
-    if (!link?.id) return;
-    setLoading(true);
-    setErr(null);
-    try {
-      const res = await apiPatch<PublicLink | null>(`/me/public-link/${link.id}/revoke`, {});
-      const data = unwrap<PublicLink | null>(res);
-      setLink(data);
-    } catch {
-      setErr('Erro ao revogar link.');
-    } finally {
-      setLoading(false);
-    }
-  }
+  const canSubmit = useMemo(
+    () =>
+      !loading && // Adicionado para desabilitar o botão enquanto está carregando
+      consent &&
+      pin.length === 6 &&
+      confirmPin.length === 6 &&
+      pin === confirmPin &&
+      loginPassword.length >= 6,
+    [loading, consent, pin, confirmPin, loginPassword],
+  );
 
   useEffect(() => {
-    if (!ready) return;
-    void load();
-  }, [ready]);
+    setErr(null); // Limpa mensagens de erro ao mudar os campos
+    setOk(null);  // Limpa mensagens de sucesso ao mudar os campos
+  }, [pin, confirmPin, loginPassword, consent]);
 
-  if (!ready) {
-    return (
-      <main className="mx-auto max-w-xl p-6">
-        <p>Carregando…</p>
-      </main>
-    );
+  async function handleGenerate(e: React.FormEvent) {
+    e.preventDefault();
+    if (!canSubmit) return;
+    setLoading(true);
+    setErr(null);
+    setOk(null);
+    try {
+      // 1) Define/atualiza o PIN, enviando TODOS os campos obrigatórios para a API
+      const payload = {
+        pin: pin,
+        confirmLoginPassword: loginPassword,
+        consent: consent,
+      };
+
+      // API call para PUT /me/pin (para configurar o PIN do usuário)
+      await apiPut<unknown>('/me/pin', payload);
+
+      // 2) Gera (ou regera) o link público
+      const res = await apiPost<PublicLink>('/me/public-link', {});
+      const link = res.data;
+      if (!link?.slug) throw new Error('Não foi possível gerar o link público.');
+
+      // 3) Guarda o PIN no sessionStorage para que a página de acesso público possa pré-preencher
+      // (usando uma chave específica para o slug)
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem(`public_pin_for_${link.slug}`, pin); 
+      }
+
+      setOk('QR Code gerado com sucesso.');
+      // Aponta para a página de exibição do QR Code
+      router.replace(`/p/${link.slug}`); 
+    } catch (e) {
+      const msg =
+        (isApiError(e) && e.message) ? e.message :
+          e instanceof Error ? e.message :
+            'Falha ao gerar QR Code. Tente novamente.';
+      setErr(msg);
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
-    <main className="mx-auto max-w-xl p-6">
-      <h1 className="mb-4 text-2xl font-semibold">QR público de emergência</h1>
-      <p className="mb-6 text-sm text-slate-600">
-        Gere um link público (protegido por PIN) para ser acessado via QR Code.
-      </p>
+    <main className="relative min-h-dvh bg-[#E6EBFF] p-6 pb-24">
+      {/* marca d’água */}
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+        <Logo className="opacity-30" />
+      </div>
 
-      {err && (
-        <div className="mb-4 rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-rose-700">
-          {err}
-        </div>
-      )}
+      <div className="relative z-10 mx-auto w-full max-w-md">
+        <h1 className="mb-6 text-center text-lg font-semibold">Gerar Acesso Público</h1>
 
-      <div className="mb-6 rounded-lg border bg-white px-4 py-3 shadow-sm">
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-slate-500">Status:</span>
-          <span
-            className={
-              'rounded px-2 py-0.5 text-xs ' +
-              (link?.status === 'active'
-                ? 'bg-green-100 text-green-700'
-                : link
-                ? 'bg-slate-200 text-slate-700'
-                : 'bg-slate-100 text-slate-500')
-            }
-          >
-            {link ? (link.status === 'active' ? 'ativo' : 'revogado') : '—'}
-          </span>
-        </div>
+        <form onSubmit={handleGenerate} className="space-y-5">
+          {/* PIN */}
+          <div>
+            <label className="mb-1 block text-sm">Senha pública (PIN)</label>
+            <input
+              type="password"
+              inputMode="numeric"
+              pattern="\d{6}"
+              maxLength={6}
+              value={pin}
+              onChange={(e) => setPin(onlyDigits(e.target.value))}
+              className="w-full rounded-md border bg-white px-3 py-2"
+              placeholder="6 dígitos numéricos"
+              required
+            />
+            <ul className="mt-2 space-y-1 text-xs text-slate-600">
+              <li>• Senha deve conter 6 dígitos</li>
+              <li>• Use apenas números</li>
+            </ul>
+          </div>
 
-        <div className="mt-3 text-sm">
-          <div className="mb-1 text-slate-500">Slug:</div>
-          <div className="font-mono">{link?.slug ?? '—'}</div>
-        </div>
+          {/* Confirmar PIN */}
+          <div>
+            <label className="mb-1 block text-sm">Confirmar senha pública (PIN)</label>
+            <input
+              type="password"
+              inputMode="numeric"
+              pattern="\d{6}"
+              maxLength={6}
+              value={confirmPin}
+              onChange={(e) => setConfirmPin(onlyDigits(e.target.value))}
+              className="w-full rounded-md border bg-white px-3 py-2"
+              placeholder="repita os 6 dígitos"
+              required
+            />
+            {confirmPin.length > 0 && confirmPin !== pin && (
+              <p className="mt-1 text-xs text-red-600">As senhas não conferem.</p>
+            )}
+          </div>
 
-        <div className="mt-3 text-sm">
-          <div className="mb-1 text-slate-500">URL pública:</div>
-          {link ? (
-            <a
-              href={publicUrl}
-              className="font-mono text-blue-600 underline"
-              target="_blank"
-              rel="noreferrer"
-            >
-              {publicUrl}
-            </a>
-          ) : (
-            <span>—</span>
+          {/* Campo para a Senha de Login do Usuário */}
+          <div>
+            <label className="mb-1 block text-sm">Sua senha de login</label>
+            <input
+              type="password"
+              value={loginPassword}
+              onChange={(e) => setLoginPassword(e.target.value)}
+              className="w-full rounded-md border bg-white px-3 py-2"
+              placeholder="Digite sua senha de login"
+              minLength={6}
+              required
+            />
+          </div>
+
+          {/* Consentimento LGPD */}
+          <label className="flex items-start gap-2 text-xs leading-snug text-slate-700">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={consent}
+              onChange={(e) => setConsent(e.target.checked)}
+              required
+            />
+            <span>
+              Autorizo a criação do QR Code e do link público para acesso às minhas informações
+              clínicas, exclusivamente para emergências, nos termos da Lei Geral de Proteção de
+              Dados Pessoais – LGPD (Lei nº 13.709/2018).
+            </span>
+          </label>
+
+          {/* Mensagens */}
+          {err && (
+            <div className="rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+              {err}
+            </div>
           )}
-        </div>
+          {ok && (
+            <div className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+              {ok}
+            </div>
+          )}
 
-        <p className="mt-3 text-xs text-slate-500">
-          A página pública é <code>/p/&lt;slug&gt;</code>. A impressão do cartão está em{' '}
-          <code>/qr/print</code>.
-        </p>
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        {!link && (
           <button
-            onClick={generate}
-            disabled={loading}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-white disabled:opacity-60"
+            type="submit"
+            disabled={!canSubmit}
+            className="mx-auto block w-56 rounded-md bg-[#cfe2ff] px-4 py-2 text-slate-900 ring-1 ring-slate-300 disabled:opacity-60"
           >
-            {loading ? 'Gerando…' : 'Gerar'}
+            {loading ? 'Gerando…' : 'Gerar QR Code'}
           </button>
-        )}
-
-        {link?.status === 'active' && (
-          <>
-            <button
-              onClick={regenerate}
-              disabled={loading}
-              className="rounded-lg bg-indigo-600 px-4 py-2 text-white disabled:opacity-60"
-            >
-              {loading ? 'Regerando…' : 'Regerar'}
-            </button>
-
-            <button
-              onClick={revoke}
-              disabled={loading}
-              className="rounded-lg bg-rose-600 px-4 py-2 text-white disabled:opacity-60"
-            >
-              {loading ? 'Revogando…' : 'Revogar'}
-            </button>
-
-            <Link
-              href="/qr/print"
-              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-700 hover:bg-slate-50"
-            >
-              Imprimir
-            </Link>
-
-            <Link
-              href={publicUrl || '#'}
-              target="_blank"
-              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-            >
-              Abrir público
-            </Link>
-          </>
-        )}
-
-        {link && link.status === 'revoked' && (
-          <button
-            onClick={generate}
-            disabled={loading}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-white disabled:opacity-60"
-          >
-            {loading ? 'Gerando…' : 'Gerar novo'}
-          </button>
-        )}
+        </form>
       </div>
+      <BottomNav />
     </main>
   );
 }

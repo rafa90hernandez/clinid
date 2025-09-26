@@ -1,18 +1,21 @@
 import { Body, Controller, Put, Req, UseGuards } from '@nestjs/common';
-import { PublicCredentialsService } from './public-credentials.service';
+import type { Request } from 'express';
 import { JwtAuthGuard } from '../accounts/guards/jwt-auth.guard';
 import { SetPinDto } from './dto/set-pin.dto';
-import type { Request } from 'express';
+import { PublicCredentialsService } from './public-credentials.service';
 
 type JwtUser = { sub: string; email: string };
 
 @UseGuards(JwtAuthGuard)
 @Controller('me/pin')
 export class PublicCredentialsController {
-  constructor(private readonly svc: PublicCredentialsService) {}
+  constructor(private readonly service: PublicCredentialsService) {}
 
   @Put()
-  setPin(@Req() req: Request & { user: JwtUser }, @Body() dto: SetPinDto) {
-    return this.svc.setPin(req.user.sub, dto);
+  async setPin(
+    @Req() req: Request & { user: JwtUser },
+    @Body() dto: SetPinDto,
+  ) {
+    return this.service.setPin(req.user.sub, dto);
   }
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import { FormEvent, useMemo, useState } from 'react';
-import Image from 'next/image';
+import { Logo } from '@/components/logo'
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { apiPost } from '@/lib/api';
@@ -142,7 +142,7 @@ export default function RegisterPage() {
     <div className="relative min-h-dvh bg-[#E6EBFF] text-slate-900">
       {/* logo grande, 30% opacidade no fundo (igual protótipo) */}
       <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-        <Image src="/logo.png" alt="ClinID" width={360} height={150} className="opacity-30" />
+        <Logo className="opacity-30" />
       </div>
 
       <main className="relative z-10 mx-auto max-w-sm px-6 py-8">

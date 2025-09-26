@@ -1,6 +1,8 @@
 import { Injectable, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpsertProfileDto } from './dto/upsert-profile.dto';
+import { Prisma } from '@prisma/client';
+import * as crypto from 'node:crypto';
 
 @Injectable()
 export class ProfilesService {
@@ -15,25 +17,47 @@ export class ProfilesService {
       throw new ForbiddenException('É necessário consentimento LGPD');
     }
 
-    const common = {
-      userId,
-      firstName: dto.first_name,
-      lastName: dto.last_name,
-      sex: dto.sex,
-      emergencyContactName: dto.emergency_contact_name,
-      emergencyContactPhone: dto.emergency_contact_phone,
-      bloodType: dto.blood_type,
+    const now = new Date();
+
+    // UPDATE: só muda consentAt quando houver novo consentimento explícito
+    const updateData: Prisma.ClinicalProfileUncheckedUpdateInput = {
+      firstName: dto.first_name ?? '',
+      lastName: dto.last_name ?? '',
+      sex: dto.sex ?? null,
+      emergencyContactName: dto.emergency_contact_name ?? null,
+      emergencyContactPhone: dto.emergency_contact_phone ?? null,
+      bloodType: dto.blood_type ?? null,
       allergies: dto.allergies ?? [],
       medications: dto.medications ?? [],
       diseases: dto.diseases ?? [],
       surgeries: dto.surgeries ?? [],
-      consentAt: new Date(),
+      updatedAt: now,
+      ...(dto.consent ? { consentAt: now } : {}), // opcional no update
+    };
+
+    // CREATE: consentAt é obrigatório (schema exige string | Date)
+    const createData: Prisma.ClinicalProfileUncheckedCreateInput = {
+      id: crypto.randomUUID(),
+      userId,
+      createdAt: now,
+      updatedAt: now,
+      consentAt: now, // <-- sempre presente no create
+      firstName: dto.first_name ?? '',
+      lastName: dto.last_name ?? '',
+      sex: dto.sex ?? null,
+      emergencyContactName: dto.emergency_contact_name ?? null,
+      emergencyContactPhone: dto.emergency_contact_phone ?? null,
+      bloodType: dto.blood_type ?? null,
+      allergies: dto.allergies ?? [],
+      medications: dto.medications ?? [],
+      diseases: dto.diseases ?? [],
+      surgeries: dto.surgeries ?? [],
     };
 
     const profile = await this.prisma.clinicalProfile.upsert({
       where: { userId },
-      update: common,
-      create: { id: crypto.randomUUID(), createdAt: new Date(), ...common },
+      update: updateData,
+      create: createData,
     });
 
     // snapshot do perfil no histórico
@@ -54,7 +78,7 @@ export class ProfilesService {
           emergencyContactPhone: profile.emergencyContactPhone,
           updatedAt: profile.updatedAt,
         },
-        changedAt: new Date(),
+        changedAt: now,
         changedBy: userId,
       },
     });

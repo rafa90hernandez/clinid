@@ -91,8 +91,8 @@ export default function DashboardPage() {
     link && typeof window !== 'undefined'
       ? `${window.location.origin}/q/${link.slug}`
       : link
-      ? `/q/${link.slug}`
-      : '';
+        ? `/q/${link.slug}`
+        : '';
 
   return (
     <main className="p-6 pb-24">
@@ -156,7 +156,7 @@ export default function DashboardPage() {
                 <p>Slug: {link.slug}</p>
                 <p className="truncate">URL: {publicUrl}</p>
                 <div className="mt-2 flex flex-wrap gap-3">
-                  <Link className="text-blue-600 underline" href={`/q/${link.slug}`}>
+                  <Link className="text-blue-600 underline" href={`/public-access/${link.slug}`}>
                     Ver página pública
                   </Link>
                   <Link className="text-blue-600 underline" href="/qr/print">

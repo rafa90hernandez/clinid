@@ -63,7 +63,6 @@ export class AccountsService {
   async validateUser(email: string, password: string): Promise<LocalUser> {
     const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user) throw new UnauthorizedException('Credenciais inválidas');
-    if (user.isDeleted) throw new UnauthorizedException('Conta desativada');
 
     const ok = await argon2.verify(user.passwordHash, password);
     if (!ok) {
@@ -104,7 +103,7 @@ export class AccountsService {
    */
   async forgotPassword(email: string) {
     const user = await this.prisma.user.findUnique({ where: { email } });
-    if (!user || user.isDeleted) return { ok: true };
+    if (!user) return { ok: true };
 
     const rawToken = randomBytes(24).toString('base64url');
     const tokenHash = await argon2.hash(rawToken, { type: argon2.argon2id });
@@ -135,12 +134,6 @@ export class AccountsService {
     return { ok: true };
   }
 
-  /**
-   * Reset de senha:
-   * - valida token/expiração/uso
-   * - impede senha igual
-   * - invalida token
-   */
   async resetPassword(tokenId: string, rawToken: string, newPassword: string) {
     const token = await this.prisma.passwordResetToken.findUnique({
       where: { id: tokenId },
@@ -155,7 +148,7 @@ export class AccountsService {
     if (!ok) throw invalid();
 
     const user = await this.prisma.user.findUnique({ where: { id: token.userId } });
-    if (!user || user.isDeleted) throw invalid();
+    if (!user) throw invalid();
 
     const same = await argon2.verify(user.passwordHash, newPassword);
     if (same) throw new BadRequestException('A nova senha deve ser diferente da atual');
@@ -202,40 +195,27 @@ export class AccountsService {
     return this.findPublicById(local.sub);
   }
 
-  /**
-   * Exclui conta:
-   * - revoga links públicos
-   * - remove PIN
-   * - apaga tokens de reset
-   * - marca user como isDeleted (soft delete)
-   */
   async deleteAccount(userId: string, confirmLoginPassword: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user || user.isDeleted) {
-      throw new BadRequestException('Usuário não encontrado ou já excluído');
+    if (!user) {
+      throw new BadRequestException('Usuário não encontrado.');
     }
 
     const ok = await argon2.verify(user.passwordHash, confirmLoginPassword);
     if (!ok) throw new UnauthorizedException('Senha de confirmação inválida');
 
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: userId,
+        action: 'account.delete.request', // Ação para indicar que a exclusão foi solicitada
+        target: `user:${userId}`,
+        details: { reason: 'user_request_hard_delete' },
+      },
+    });
+
     await this.prisma.$transaction([
-      this.prisma.publicLink.updateMany({
-        where: { userId, status: 'active' },
-        data: { status: 'revoked', revokedAt: new Date() },
-      }),
-      this.prisma.publicCredential.deleteMany({ where: { userId } }),
-      this.prisma.passwordResetToken.deleteMany({ where: { userId } }),
-      this.prisma.user.update({
+      this.prisma.user.delete({
         where: { id: userId },
-        data: { isDeleted: true },
-      }),
-      this.prisma.auditLog.create({
-        data: {
-          actorId: userId,
-          action: 'account.delete',
-          target: `user:${userId}`,
-          details: { reason: 'user_request' },
-        },
       }),
     ]);
 

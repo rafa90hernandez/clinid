@@ -43,24 +43,9 @@ export default function LoginPage() {
       <div className="mx-auto w-full max-w-xs px-6 py-8">
         {/* Logo grande */}
         <div className="mt-2 mb-10 flex w-full justify-center">
-          <div className="rounded-2xl bg-white/80 px-6 py-4 shadow-md">
+          <div className="bg-[#fefefe] rounded-2xl px-6 py-4 shadow-md">
             <Logo />
           </div>
-        </div>
-
-        {/* Acesso via QR Code */}
-        <div className="mb-8 flex w-full justify-center">
-          <Link
-            href="/qr"
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm shadow-sm hover:bg-slate-50"
-            title="Acesso via QR Code"
-          >
-            <span aria-hidden className="text-[16px]">▣▣</span>
-            <div className="leading-4 text-left">
-              <div className="font-medium">Acesso via</div>
-              <div>QR Code</div>
-            </div>
-          </Link>
         </div>
 
         {/* divisor fino */}
