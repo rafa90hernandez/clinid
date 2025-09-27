@@ -21,7 +21,7 @@ export class ApiError extends Error {
   }
 }
 
-// Sempre usar caminho relativo; o next.config.ts faz o proxy (quando configurado)
+// Sempre usar caminho relativo; o next.config.* faz o proxy (quando configurado)
 const API_BASE = '/api';
 
 /** Tipos aceitos como payload JSON */
@@ -82,7 +82,8 @@ async function handleResponse<T>(res: Response): Promise<T> {
     } catch {
       /* ignore parse errors */
     }
-    const message = extractMessage(parsed) ?? res.statusText || 'Erro na requisição';
+    // ✅ corrigido: use parênteses ao misturar ?? e ||
+    const message = extractMessage(parsed) ?? (res.statusText || 'Erro na requisição');
     throw new ApiError(message, res.status, res, parsed);
   }
 
