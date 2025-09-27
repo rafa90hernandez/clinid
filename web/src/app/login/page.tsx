@@ -14,14 +14,12 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault(); // impede POST nativo para /login
+  async function handleLogin() {
+    // evita qualquer submit nativo
     setErr(null);
     setLoading(true);
     try {
-      // Chama a API via rewrite: /api/accounts/login -> BACKEND/accounts/login
       await apiPost('/accounts/login', { email, password });
-      // sucesso: redireciona
       router.replace('/');
     } catch (error) {
       if (error instanceof ApiError) {
@@ -51,7 +49,8 @@ export default function LoginPage() {
           </p>
         )}
 
-        <form onSubmit={onSubmit} className="rounded-lg bg-white p-6 shadow-md">
+        {/* NÃO é form — é um card com inputs e um botão que chama handleLogin */}
+        <div className="rounded-lg bg-white p-6 shadow-md">
           <div className="mb-4">
             <label className="mb-1 block text-sm">E-mail</label>
             <input
@@ -79,8 +78,9 @@ export default function LoginPage() {
           </div>
 
           <button
-            type="submit"
-            disabled={loading}
+            type="button"
+            onClick={handleLogin}
+            disabled={loading || !email || !password}
             className="w-full rounded-md bg-slate-900 px-4 py-2 text-white disabled:opacity-60"
           >
             {loading ? 'Entrando…' : 'Entrar'}
@@ -94,7 +94,7 @@ export default function LoginPage() {
               Criar conta
             </Link>
           </div>
-        </form>
+        </div>
       </div>
     </main>
   );
