@@ -1,92 +1,80 @@
+// web/src/app/settings/delete/page.tsx
 'use client';
 
 import { useState } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { apiDelete, ApiError } from '@/lib/api';
 
 export default function DeleteAccountPage() {
   const router = useRouter();
   const [password, setPassword] = useState('');
-  const [submitting, setSubmitting] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  async function onDelete(e: React.FormEvent) {
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!password || submitting) return;
-
-    setSubmitting(true);
-    setErr(null);
     setMsg(null);
+    setErr(null);
+    setLoading(true);
 
     try {
       await apiDelete<unknown>('/accounts', {
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ confirmLoginPassword: password }),
+        // basta usar json; o helper define Content-Type e inclui credenciais
+        json: { confirmLoginPassword: password },
+        withAuth: true,
       });
 
       setMsg('Conta excluída com sucesso. Você será redirecionado.');
-      setTimeout(() => {
-        router.replace('/login');
-      }, 1500);
-    } catch (error: unknown) {
-      if (error instanceof ApiError) {
-        setErr(error.message ?? `Falha ao excluir a conta (HTTP ${error.status}).`);
-      } else if (error instanceof Error) {
-        setErr(error.message);
+      // pequeno delay só para o usuário ler a mensagem
+      setTimeout(() => router.replace('/'), 1200);
+    } catch (e) {
+      if (e instanceof ApiError) {
+        if (e.status === 401) {
+          setErr('Sessão expirada. Faça login novamente.');
+          router.replace('/login');
+          return;
+        }
+        setErr(e.message || 'Falha ao excluir a conta.');
       } else {
         setErr('Falha ao excluir a conta.');
       }
     } finally {
-      setSubmitting(false);
+      setLoading(false);
     }
   }
 
   return (
-    <main className="mx-auto max-w-md p-6">
-      <h1 className="text-xl font-semibold">Excluir conta</h1>
-      <p className="mt-2 text-sm text-slate-600">
-        Esta ação é <strong>irreversível</strong>. Confirme sua senha para prosseguir.
+    <main className="max-w-md mx-auto p-6">
+      <h1 className="text-2xl font-bold mb-4">Excluir Conta</h1>
+      <p className="text-sm text-gray-600 mb-4">
+        Esta ação é irreversível. Confirme sua senha para prosseguir.
       </p>
 
-      <form onSubmit={onDelete} className="mt-6 space-y-4">
+      <form onSubmit={onSubmit} className="space-y-4">
         <div>
-          <label htmlFor="password" className="block text-sm font-medium">
-            Senha de login
-          </label>
+          <label className="block text-sm mb-1">Senha de login</label>
           <input
-            id="password"
             type="password"
-            className="mt-1 w-full rounded-md border px-3 py-2"
-            placeholder="••••••••"
+            className="w-full border rounded px-3 py-2"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            autoComplete="current-password"
+            placeholder="Sua senha"
+            required
           />
         </div>
 
-        {err && <p className="text-sm text-red-600">{err}</p>}
-        {msg && <p className="text-sm text-green-700">{msg}</p>}
-
-        <div className="flex items-center gap-3">
-          <button
-            type="submit"
-            disabled={!password || submitting}
-            className="rounded-md bg-red-600 px-4 py-2 text-white disabled:opacity-60"
-          >
-            {submitting ? 'Excluindo…' : 'Excluir conta'}
-          </button>
-          <Link href="/settings" className="rounded-md border px-4 py-2">
-            Cancelar
-          </Link>
-        </div>
+        <button
+          type="submit"
+          disabled={loading || !password}
+          className="bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded px-4 py-2"
+        >
+          {loading ? 'Excluindo...' : 'Excluir minha conta'}
+        </button>
       </form>
 
-      <hr className="my-6" />
-      <p className="text-xs text-slate-500">
-        Dica: se preferir, você pode desativar sua conta ao invés de excluir permanentemente.
-      </p>
+      {msg && <p className="mt-4 text-green-700">{msg}</p>}
+      {err && <p className="mt-4 text-red-700">{err}</p>}
     </main>
   );
 }

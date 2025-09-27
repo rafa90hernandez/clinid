@@ -1,148 +1,127 @@
 // web/src/lib/api.ts
 
-// URL base da API vinda do ambiente (ex.: https://clinid.onrender.com)
 export const API_URL =
   process.env.NEXT_PUBLIC_API_URL?.replace(/\/+$/, '') || '';
 
 export class ApiError extends Error {
   status: number;
-  res: Response;
-  body: unknown;
+  response: Response;
+  payload: unknown;
 
-  constructor(message: string, status: number, res: Response, body: unknown) {
+  constructor(message: string, status: number, response: Response, payload: unknown) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
-    this.res = res;
-    this.body = body;
+    this.response = response;
+    this.payload = payload;
   }
 }
 
-type ExtraInit = Omit<RequestInit, 'method' | 'body' | 'credentials'> & {
-  withAuth?: boolean; // reservado p/ futuras rotas autenticadas
+type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+
+export type ExtraInit = {
+  headers?: Record<string, string>;
+  /** Pass-through do body nativo do fetch */
+  body?: BodyInit | null;
+  /** Atalho: serializa como JSON e define Content-Type automaticamente */
+  json?: unknown;
+  /** Se true, envia credenciais (cookies). Padrão: true */
+  withAuth?: boolean;
+  /** Sinal do AbortController, opcional */
+  signal?: AbortSignal;
 };
 
-function joinUrl(path: string) {
-  const p = path.startsWith('/') ? path : `/${path}`;
-  return `${API_URL}${p}`;
-}
-
-async function parseJsonSafe(res: Response) {
-  try {
-    return await res.json();
-  } catch {
-    return null;
+/** Tenta extrair uma mensagem amigável do payload de erro */
+function extractMessage(p: unknown): string | undefined {
+  if (p && typeof p === 'object') {
+    // @ts-expect-error tentativa best-effort
+    const msg = (p.message ?? p.error ?? p.detail) as unknown;
+    if (typeof msg === 'string') return msg;
   }
+  return undefined;
 }
 
-function extractMessage(body: unknown): string | null {
-  if (body && typeof body === 'object') {
-    const b = body as Record<string, unknown>;
-    if (typeof b.message === 'string') return b.message;
-    if (typeof b.error === 'string') return b.error;
+async function parseMaybeJson(res: Response): Promise<unknown> {
+  const ct = res.headers.get('content-type') || '';
+  if (ct.includes('application/json')) {
+    try {
+      return await res.json();
+    } catch {
+      // ignora parse error
+      return null;
+    }
   }
   return null;
 }
 
-async function handleJson<T>(res: Response): Promise<T> {
-  const parsed = await parseJsonSafe(res);
-  if (!res.ok) {
-    const msg = extractMessage(parsed) ?? res.statusText ?? 'Erro na requisição';
-    throw new ApiError(msg, res.status, res, parsed);
+function buildUrl(path: string): string {
+  // aceita caminho absoluto (http/https), ou prefixa com API_URL
+  if (/^https?:\/\//i.test(path)) return path;
+  if (!API_URL) return path; // em dev local sem env, pode falhar — ok
+  const base = API_URL.replace(/\/+$/, '');
+  const p = path.startsWith('/') ? path : `/${path}`;
+  return `${base}${p}`;
+}
+
+async function request<T>(
+  method: HttpMethod,
+  path: string,
+  extra: ExtraInit = {},
+): Promise<T> {
+  const url = buildUrl(path);
+
+  const headers: Record<string, string> = {
+    ...(extra.headers || {}),
+  };
+
+  let body: BodyInit | null | undefined = extra.body;
+
+  if (extra.json !== undefined) {
+    headers['Content-Type'] = headers['Content-Type'] || 'application/json';
+    body = JSON.stringify(extra.json);
   }
+
+  const withAuth = extra.withAuth !== false; // padrão true
+
+  const res = await fetch(url, {
+    method,
+    headers,
+    body,
+    credentials: withAuth ? 'include' : 'omit',
+    signal: extra.signal,
+    cache: 'no-store',
+  });
+
+  if (!res.ok) {
+    const parsed = await parseMaybeJson(res);
+    // parênteses para não misturar ?? e ||
+    const message = (extractMessage(parsed) ?? res.statusText) || 'Erro na requisição';
+    throw new ApiError(message, res.status, res, parsed);
+  }
+
+  // tenta parsear JSON no sucesso também
+  const parsed = await parseMaybeJson(res);
   return parsed as T;
 }
 
-export async function apiGet<T>(
-  path: string,
-  init: ExtraInit = {},
-): Promise<T> {
-  const url = joinUrl(path);
-  const res = await fetch(url, {
-    ...init,
-    method: 'GET',
-    credentials: 'include', // importante para cookies httpOnly
-    headers: {
-      ...(init.headers || {}),
-      Accept: 'application/json',
-    },
-  });
-  return handleJson<T>(res);
+// Helpers por método
+export function apiGet<T>(path: string, extra?: Omit<ExtraInit, 'body' | 'json'>) {
+  return request<T>('GET', path, extra);
 }
 
-export async function apiPost<T>(
-  path: string,
-  data?: unknown,
-  init: ExtraInit = {},
-): Promise<T> {
-  const url = joinUrl(path);
-  const res = await fetch(url, {
-    ...init,
-    method: 'POST',
-    credentials: 'include', // cookies de sessão
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init.headers || {}),
-      Accept: 'application/json',
-    },
-    body: data != null ? JSON.stringify(data) : undefined,
-  });
-  return handleJson<T>(res);
+export function apiPost<T>(path: string, body?: unknown, extra?: Omit<ExtraInit, 'body' | 'json'>) {
+  return request<T>('POST', path, { ...(extra || {}), json: body });
 }
 
-export async function apiPut<T>(
-  path: string,
-  data?: unknown,
-  init: ExtraInit = {},
-): Promise<T> {
-  const url = joinUrl(path);
-  const res = await fetch(url, {
-    ...init,
-    method: 'PUT',
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init.headers || {}),
-      Accept: 'application/json',
-    },
-    body: data != null ? JSON.stringify(data) : undefined,
-  });
-  return handleJson<T>(res);
+export function apiPut<T>(path: string, body?: unknown, extra?: Omit<ExtraInit, 'body' | 'json'>) {
+  return request<T>('PUT', path, { ...(extra || {}), json: body });
 }
 
-export async function apiPatch<T>(
-  path: string,
-  data?: unknown,
-  init: ExtraInit = {},
-): Promise<T> {
-  const url = joinUrl(path);
-  const res = await fetch(url, {
-    ...init,
-    method: 'PATCH',
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init.headers || {}),
-      Accept: 'application/json',
-    },
-    body: data != null ? JSON.stringify(data) : undefined,
-  });
-  return handleJson<T>(res);
+export function apiPatch<T>(path: string, body?: unknown, extra?: Omit<ExtraInit, 'body' | 'json'>) {
+  return request<T>('PATCH', path, { ...(extra || {}), json: body });
 }
 
-export async function apiDelete<T>(
-  path: string,
-  init: ExtraInit = {},
-): Promise<T> {
-  const url = joinUrl(path);
-  const res = await fetch(url, {
-    ...init,
-    method: 'DELETE',
-    credentials: 'include',
-    headers: {
-      ...(init.headers || {}),
-      Accept: 'application/json',
-    },
-  });
-  return handleJson<T>(res);
+/** DELETE pode enviar corpo usando extra.json (ou extra.body). */
+export function apiDelete<T>(path: string, extra?: ExtraInit) {
+  return request<T>('DELETE', path, extra || {});
 }
