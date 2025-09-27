@@ -1,49 +1,35 @@
-# -------- Builder --------
-FROM node:20-alpine3.20 AS builder
+# syntax=docker/dockerfile:1
 
-# Adiciona NEXT_PUBLIC_API_URL como argumento de build e o define como ENV var
-# para que esteja disponível durante 'npx next build'
-ARG NEXT_PUBLIC_API_URL
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
-
-WORKDIR /usr/src/app
-
-# Para Next.js às vezes ajuda ter compat layer
+# ---------- deps ----------
+FROM node:20-alpine AS deps
+WORKDIR /app
+# Dependências do sistema que o Next pode precisar
 RUN apk add --no-cache libc6-compat
-
-# Opcional: configurar registry/timeouts (pode sobrescrever com --build-arg)
-ARG NPM_REGISTRY=https://registry.npmjs.org/
-RUN npm set registry ${NPM_REGISTRY} \
- && npm set fetch-retries 5 \
- && npm set fetch-retry-maxtimeout 600000 \
- && npm set fetch-timeout 600000 \
- && npm set audit false \
- && npm set fund false
-
-# Copie apenas manifests e instale deps com cache
 COPY package*.json ./
-RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
+RUN npm ci
 
-# Copie o restante do código
-COPY . .
-
-# Build do Next
-ENV NEXT_TELEMETRY_DISABLED=1
-RUN npx next build
-
-# -------- Runner --------
-FROM node:20-alpine3.20 AS runner
-WORKDIR /usr/src/app
-ENV NODE_ENV=production
+# ---------- builder ----------
+FROM node:20-alpine AS builder
+WORKDIR /app
 RUN apk add --no-cache libc6-compat
+ENV NEXT_TELEMETRY_DISABLED=1
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+# Aqui está o "Build Command" efetivo (dentro do Dockerfile)
+RUN npm run build
 
-# node_modules do builder (evita reinstalar)
-COPY --from=builder /usr/src/app/node_modules/ ./node_modules/
-
-# artefatos da build e assets públicos
-COPY --from=builder /usr/src/app/.next/ ./.next/
-COPY --from=builder /usr/src/app/public/ ./public/
-COPY --from=builder /usr/src/app/package.json ./package.json
+# ---------- runner ----------
+FROM node:20-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+# Copia artefatos necessários para rodar `next start`
+COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/public ./public
+# Para `next start` funcionar sem output standalone, precisamos de node_modules
+COPY --from=deps /app/node_modules ./node_modules
 
 EXPOSE 3000
-CMD ["npm", "run", "start"]
+
+# Isto é o "Start Command" efetivo (dentro do Dockerfile)
+CMD ["npm", "start"]

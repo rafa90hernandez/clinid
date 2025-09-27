@@ -1,9 +1,11 @@
+// api/src/main.ts
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import helmet from 'helmet'; // default import
 import cookieParser from 'cookie-parser'; // default import
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { PrismaService } from './prisma/prisma.service';
 
 async function bootstrap() {
   // Usaremos enableCors abaixo com opções explícitas
@@ -44,6 +46,11 @@ async function bootstrap() {
   SwaggerModule.setup('docs', app, doc, {
     swaggerOptions: { persistAuthorization: true },
   });
+
+  // Habilita shutdown do Nest (SIGINT/SIGTERM) e integra com PrismaService
+  app.enableShutdownHooks();
+  const prisma = app.get(PrismaService);
+  prisma.enableShutdownHooks(app); // implementado no PrismaService usando process.on(...)
 
   // Escutar em 0.0.0.0 (containers/nginx)
   const port = Number(process.env.PORT || 3001);

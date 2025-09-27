@@ -1,94 +1,134 @@
-// C:\Users\rafae\clinid\api\src\public-credentials\public-credentials.service.ts
-
-import { Injectable, BadRequestException, UnauthorizedException, NotFoundException } from '@nestjs/common'; // Adicionado NotFoundException
+import { Injectable, BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import * as argon2 from 'argon2';
 import { SetPinDto } from './dto/set-pin.dto';
-import { PublicLinkInfoResponseDto } from './dto/public-link-info-response.dto'; // Importe o novo DTO
+import { PublicLinkInfoResponseDto } from './dto/public-link-info-response.dto';
+import { PublicLinkStatus as LinkStatus, Prisma } from '@prisma/client';
+import { randomUUID, randomBytes } from 'crypto';
+
+type SetPinResult = {
+  ok: true;
+  userId: string;
+  consentAt: Date | null;
+  updatedAt: Date;
+  slug: string;
+};
+
+type GrantOrRevokeConsentResult = {
+  ok: true;
+  userId: string;
+  consentAt: Date | null;
+};
+
+/** Selects tipados (evitam `any` no retorno do Prisma) */
+const selectPublicCredential = {
+  userId: true,
+  consentAt: true,
+  updatedAt: true,
+} as const;
+type PublicCredentialSelected = Prisma.PublicCredentialGetPayload<{
+  select: typeof selectPublicCredential;
+}>;
+
+const selectPublicLinkMinimal = {
+  id: true,
+  slug: true,
+  status: true,
+} as const;
+type PublicLinkMinimal = Prisma.PublicLinkGetPayload<{
+  select: typeof selectPublicLinkMinimal;
+}>;
+
+const selectPublicLinkInfo = {
+  slug: true,
+  status: true,
+} as const;
+type PublicLinkInfo = Prisma.PublicLinkGetPayload<{
+  select: typeof selectPublicLinkInfo;
+}>;
 
 @Injectable()
 export class PublicCredentialsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /** Slug aleatório (curto) e URL-safe */
+  private makeSlug(len = 10): string {
+    return randomBytes(Math.ceil(len / 1.33))
+      .toString('base64url')
+      .slice(0, len);
+  }
+
+  /** Gera um slug único (evita colisão) */
+  private async generateUniqueSlug(): Promise<string> {
+    for (let i = 0; i < 8; i++) {
+      const candidate = this.makeSlug(10);
+      const collision = await this.prisma.publicLink.findUnique({
+        where: { slug: candidate },
+        select: { id: true },
+      });
+      if (!collision) return candidate;
+    }
+    return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  }
+
   /**
-   * Define/atualiza o PIN público e registra consentimento para o usuário autenticado.
-   * Pré-requisitos:
-   *  - dto.consent === true
-   *  - senha de login correta (confirmLoginPassword)
-   *  - PIN com exatamente 6 dígitos [0-9]
+   * Define/atualiza o PIN público e registra consentimento.
+   * - exige consent === true
+   * - senha de login correta
+   * - PIN 6 dígitos
    */
-  async setPin(userId: string, dto: SetPinDto): Promise<any> {
-    // 1) Confirmação de consentimento explícito
-    if (!dto.consent) {
-      throw new BadRequestException('É necessário aceitar o consentimento.');
-    }
-
-    // 2) Validação do PIN (6 dígitos)
-    if (!/^\d{6}$/.test(dto.pin)) {
+  async setPin(userId: string, dto: SetPinDto): Promise<SetPinResult> {
+    if (!dto.consent) throw new BadRequestException('É necessário aceitar o consentimento.');
+    if (!/^\d{6}$/.test(dto.pin))
       throw new BadRequestException('O PIN deve conter exatamente 6 dígitos.');
-    }
 
-    // 3) Buscar hash da senha do usuário
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { passwordHash: true },
     });
-    if (!user?.passwordHash) {
-      throw new UnauthorizedException('Conta sem senha definida.');
-    }
+    if (!user?.passwordHash) throw new UnauthorizedException('Conta sem senha definida.');
 
-    // 4) Validar senha de confirmação (senha de login)
-    const ok = await argon2.verify(user.passwordHash, dto.confirmLoginPassword);
-    if (!ok) {
-      throw new UnauthorizedException('Senha de confirmação inválida.');
-    }
+    const passwordOk = await argon2.verify(user.passwordHash, dto.confirmLoginPassword);
+    if (!passwordOk) throw new UnauthorizedException('Senha de confirmação inválida.');
 
-    // 5) Atualizar/definir o PIN e gravar consentimento
     const pinHash = await argon2.hash(dto.pin, { type: argon2.argon2id });
 
-    // Crie ou atualize PublicCredential
-    const updatedCredential = await this.prisma.publicCredential.upsert({
+    // credencial pública (retorno 100% tipado)
+    const updatedCredential: PublicCredentialSelected =
+      await this.prisma.publicCredential.upsert({
+        where: { userId }, // normalmente único em PublicCredential
+        update: { pinHash, consentAt: new Date() },
+        create: { userId, pinHash, consentAt: new Date() },
+        select: selectPublicCredential,
+      });
+
+    // link público: cria se não existir; caso exista, ativa por id (único)
+    const existing: PublicLinkMinimal | null = await this.prisma.publicLink.findFirst({
       where: { userId },
-      update: {
-        pinHash,
-        consentAt: new Date(),
-      },
-      create: {
-        userId,
-        pinHash,
-        consentAt: new Date(),
-      },
-      select: { userId: true, consentAt: true, updatedAt: true },
+      select: selectPublicLinkMinimal,
     });
 
-    // Crie ou atualize PublicLink com status 'active'
-    // Se já existe, atualiza status para 'active'. Se não existe, cria um slug único.
-    let publicLink = await this.prisma.publicLink.findUnique({ where: { userId } });
+    let publicLinkSlug: string;
 
-    if (!publicLink) {
-      // Gera um slug único. Você pode querer uma lógica mais robusta para slugs,
-      // como verificar unicidade e regenerar se houver colisão.
-      const generateSlug = () => Math.random().toString(36).substring(2, 8); // 6 caracteres alfanuméricos
-      let uniqueSlug = generateSlug();
-      let slugExists = await this.prisma.publicLink.findUnique({ where: { slug: uniqueSlug } });
-      while (slugExists) {
-          uniqueSlug = generateSlug();
-          slugExists = await this.prisma.publicLink.findUnique({ where: { slug: uniqueSlug } });
-      }
-
-      publicLink = await this.prisma.publicLink.create({
+    if (!existing) {
+      const uniqueSlug = await this.generateUniqueSlug();
+      const created = await this.prisma.publicLink.create({
         data: {
+          id: randomUUID(),
           userId,
           slug: uniqueSlug,
-          status: 'active',
+          status: LinkStatus.ACTIVE,
+          revokedAt: null,
         },
+        select: { slug: true },
       });
+      publicLinkSlug = created.slug;
     } else {
-      // Se já existe, garante que está ativo (caso tenha sido revogado)
-      publicLink = await this.prisma.publicLink.update({
-        where: { userId },
-        data: { status: 'active', revokedAt: null },
+      await this.prisma.publicLink.update({
+        where: { id: existing.id },
+        data: { status: LinkStatus.ACTIVE, revokedAt: null },
       });
+      publicLinkSlug = existing.slug;
     }
 
     return {
@@ -96,87 +136,85 @@ export class PublicCredentialsService {
       userId: updatedCredential.userId,
       consentAt: updatedCredential.consentAt,
       updatedAt: updatedCredential.updatedAt,
-      slug: publicLink.slug, // Retorna o slug também
+      slug: publicLinkSlug,
     };
   }
 
-  /**
-   * Concede consentimento explicitamente para o acesso público (sem alterar PIN).
-   * Útil para fluxos em que o usuário já tem PIN e apenas aceita o termo.
-   */
-  async grantConsent(userId: string): Promise<any> {
-    const updated = await this.prisma.publicCredential.update({
+  /** Concede consentimento explícito (sem alterar PIN) e garante link ativo. */
+  async grantConsent(userId: string): Promise<GrantOrRevokeConsentResult> {
+    const updated: PublicCredentialSelected = await this.prisma.publicCredential.update({
       where: { userId },
       data: { consentAt: new Date() },
-      select: { userId: true, consentAt: true },
-    });
-    // Garante que o link também esteja ativo se o consentimento for concedido
-    await this.prisma.publicLink.upsert({
-      where: { userId },
-      update: { status: 'active', revokedAt: null },
-      create: { userId, slug: Math.random().toString(36).substring(2, 8), status: 'active' }, // Gera slug se não existir
-    });
-    return { ok: true, ...updated };
-  }
-
-  /**
-   * Revoga consentimento para o acesso público (mantém PIN, mas bloqueia exibição).
-   */
-  async revokeConsent(userId: string): Promise<any> {
-    const updated = await this.prisma.publicCredential.update({
-      where: { userId },
-      data: { consentAt: null },
-      select: { userId: true, consentAt: true },
-    });
-    // Revoga o status do link público também
-    await this.prisma.publicLink.update({
-      where: { userId },
-      data: { status: 'revoked', revokedAt: new Date() },
-    });
-    return { ok: true, ...updated };
-  }
-
-  /**
-   * Verifica rapidamente se o usuário possui consentimento ativo para acesso público.
-   */
-  async hasConsent(userId: string): Promise<boolean> {
-    const cred = await this.prisma.publicCredential.findUnique({
-      where: { userId },
-      select: { consentAt: true },
-    });
-    return !!cred?.consentAt;
-  }
-
-  /**
-   * Obtém as informações do link público para o usuário autenticado.
-   * Usado pelo frontend para exibir o link e QR Code do próprio usuário.
-   */
-  async getPublicLinkInfo(userId: string): Promise<PublicLinkInfoResponseDto | null> {
-    const publicLink = await this.prisma.publicLink.findUnique({
-      where: { userId },
-      select: {
-        slug: true,
-        status: true,
-      },
+      select: selectPublicCredential,
     });
 
-    if (!publicLink) {
-      return null;
+    const link: { id: string } | null = await this.prisma.publicLink.findFirst({
+      where: { userId },
+      select: { id: true },
+    });
+
+    if (!link) {
+      const uniqueSlug = await this.generateUniqueSlug();
+      await this.prisma.publicLink.create({
+        data: {
+          id: randomUUID(),
+          userId,
+          slug: uniqueSlug,
+          status: LinkStatus.ACTIVE,
+          revokedAt: null,
+        },
+      });
+    } else {
+      await this.prisma.publicLink.update({
+        where: { id: link.id },
+        data: { status: LinkStatus.ACTIVE, revokedAt: null },
+      });
     }
 
-    // A URL base do frontend para montar o QR Code
-    // Certifique-se de definir NEXT_PUBLIC_WEB_URL no seu .env do backend
+    return { ok: true, ...updated };
+  }
+
+  /** Revoga consentimento (mantém PIN) e marca link como REVOKED. */
+  async revokeConsent(userId: string): Promise<GrantOrRevokeConsentResult> {
+    const updated: PublicCredentialSelected = await this.prisma.publicCredential.update({
+      where: { userId },
+      data: { consentAt: null },
+      select: selectPublicCredential,
+    });
+
+    const link: { id: string } | null = await this.prisma.publicLink.findFirst({
+      where: { userId },
+      select: { id: true },
+    });
+
+    if (link) {
+      await this.prisma.publicLink.update({
+        where: { id: link.id },
+        data: { status: LinkStatus.REVOKED, revokedAt: new Date() },
+      });
+    }
+
+    return { ok: true, ...updated };
+  }
+
+  /** Info do link público do usuário autenticado (para QR no front). */
+  async getPublicLinkInfo(userId: string): Promise<PublicLinkInfoResponseDto | null> {
+    const publicLink: PublicLinkInfo | null = await this.prisma.publicLink.findFirst({
+      where: { userId },
+      select: selectPublicLinkInfo,
+    });
+
+    if (!publicLink) return null;
+
     const webBaseUrl = process.env.NEXT_PUBLIC_WEB_URL || 'http://localhost:3000';
-    const qrCodeUrl = `${webBaseUrl}/api/qr-code?data=${encodeURIComponent(`${webBaseUrl}/p/${publicLink.slug}`)}`; // Exemplo de geração, ajuste conforme seu gerador de QR Code
-    // Note: No contexto do cliente, o QR code geralmente aponta para a página do perfil público
-    // e não para a API. A API pode retornar a URL da imagem do QR code se ela for gerada no backend.
-    // Ou o frontend pode gerar a URL completa com base no slug.
+    const profileUrl = `${webBaseUrl}/p/${publicLink.slug}`;
+    const qrCodeUrl = `${webBaseUrl}/api/qr-code?data=${encodeURIComponent(profileUrl)}`;
 
     return {
       slug: publicLink.slug,
       status: publicLink.status,
-      isActive: publicLink.status === 'active',
-      qrCodeUrl: qrCodeUrl,
+      isActive: publicLink.status === LinkStatus.ACTIVE,
+      qrCodeUrl,
     };
   }
 }

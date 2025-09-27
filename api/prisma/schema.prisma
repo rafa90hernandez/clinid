@@ -15,15 +15,13 @@ model User {
   isDeleted                                       Boolean              @default(false)
   createdAt                                       DateTime             @default(now())
   updatedAt                                       DateTime             @updatedAt
-
-  // Relações
   AuditLog                                        AuditLog[]
   ClinicalHistory_ClinicalHistory_changedByToUser ClinicalHistory[]    @relation("ClinicalHistory_changedByToUser")
   histories                                       ClinicalHistory[]
   clinicalProfile                                 ClinicalProfile?
   resetTokens                                     PasswordResetToken[]
   publicCredentials                               PublicCredential?
-  publicLinks                                     PublicLink[]
+  publicLinks                                     PublicLink?
 }
 
 model ClinicalProfile {
@@ -49,24 +47,21 @@ model PublicCredential {
   userId    String    @id @db.Uuid
   pinHash   String
   updatedAt DateTime  @updatedAt
-  consentAt DateTime?            // <— única linha válida de consentAt (opcional)
+  consentAt DateTime?
   createdAt DateTime  @default(now())
-
-  // Relações
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model PublicLink {
-  id        String            @id @default(cuid())
-  slug      String            @unique
-  status    PublicLinkStatus  @default(ACTIVE)
-  isActive  Boolean           @default(true)
+  id        String           @id @default(cuid()) @db.Uuid
+  userId    String           @unique @db.Uuid
+  slug      String           @unique
+  status    PublicLinkStatus @default(ACTIVE)
+  createdAt DateTime         @default(now())
+  revokedAt DateTime?
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  userId    String            @unique   // ⬅️ torne userId único
-  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime          @default(now())
-  updatedAt DateTime          @updatedAt
+  @@index([userId])
 }
 
 model ClinicalHistory {
@@ -76,10 +71,7 @@ model ClinicalHistory {
   changedAt                            DateTime @default(now())
   changedBy                            String?  @db.Uuid
   note                                 String?
-
-  // Relações
-  // ALTERAÇÃO AQUI: Adicionado onDelete: SetNull para permitir a exclusão do User
-  User_ClinicalHistory_changedByToUser User?    @relation("ClinicalHistory_changedByToUser", fields: [changedBy], references: [id], onDelete: SetNull)
+  User_ClinicalHistory_changedByToUser User?    @relation("ClinicalHistory_changedByToUser", fields: [changedBy], references: [id])
   user                                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, changedAt])
@@ -105,9 +97,7 @@ model AuditLog {
   ip        String?  @db.Inet
   details   Json?
   createdAt DateTime @default(now())
-  // Relações
-  // ALTERAÇÃO AQUI: Adicionado onDelete: SetNull para permitir a exclusão do User
-  User      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  User      User?    @relation(fields: [actorId], references: [id])
 
   @@index([action])
   @@index([createdAt])
