@@ -130,11 +130,11 @@ NODE_ENV=development
 ### Web (`web/.env.local` / `.env.production`)
 
 ```bash
-NEXT_PUBLIC_API_BASE_URL="http://localhost:3001"     # prod: https://api.seudominio.com
-NEXT_PUBLIC_PUBLIC_SITE_URL="http://localhost:3000"  # prod: https://clinid.seudominio.com
+NEXT_PUBLIC_API_BASE_URL="http://localhost:3001"     # prod: https://clinid.onrender.com
+NEXT_PUBLIC_PUBLIC_SITE_URL="http://localhost:3000"  # prod: https://clinid-frontend.onrender.com
 ```
 
-> Em produção, as URLs ficam atrás do **Nginx** (ex.: `api.seudominio.com` e `clinid.seudominio.com`).
+> Em produção (Render), as URLs oficiais são `https://clinid.onrender.com` (API) e `https://clinid-frontend.onrender.com` (Web), servidas atrás do **Nginx**.
 
 ---
 
