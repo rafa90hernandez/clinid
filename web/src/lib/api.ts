@@ -2,8 +2,9 @@
 
 /**
  * Cliente de API do frontend.
- * Estratégia: SEMPRE chamar "/api/..." localmente.
- * O next.config faz o rewrite de "/api/*" -> BACKEND_URL (NEXT_PUBLIC_API_BASE_URL).
+ * Estratégia: chamar "/api/..." localmente para que o next.config
+ * faça o rewrite para o BACKEND quando a env NEXT_PUBLIC_API_BASE_URL
+ * existir. Se a env não existir, você verá 405 (sem proxy)!
  */
 
 export class ApiError extends Error {
@@ -20,43 +21,40 @@ export class ApiError extends Error {
   }
 }
 
-// Base SEMPRE relativa ao front; o rewrite redireciona para o backend.
+// Sempre usar caminho relativo; o next.config.ts faz o proxy (quando configurado)
 const API_BASE = '/api';
 
-/** Tipos aceitáveis como payload de JSON “alto nível”. */
+/** Tipos aceitos como payload JSON */
 type JsonPrimitive = string | number | boolean | null;
 type JsonObject = { [k: string]: JsonValue };
 type JsonArray = JsonValue[];
 export type JsonValue = JsonPrimitive | JsonObject | JsonArray;
 
-/** Tipos de corpo aceitos pelo fetch. */
-type FetchBody =
-  | BodyInit
-  | JsonValue
-  | undefined;
+/** Tipos que aceitaremos como body no fetch */
+type FetchBody = BodyInit | JsonValue | undefined;
 
-/** Narrow util: checa se é um objeto com uma chave string. */
+/** Narrow util: checa se é um objeto com 'message' */
 function hasMessageKey(u: unknown): u is { message: unknown } {
   return typeof u === 'object' && u !== null && 'message' in u;
 }
 
-/** Extrai mensagem amigável de um corpo de erro desconhecido. */
+/** Extrai string de mensagem, se houver */
 function extractMessage(u: unknown): string | undefined {
   if (typeof u === 'string') return u;
   if (hasMessageKey(u) && typeof u.message === 'string') return u.message;
   return undefined;
 }
 
-/** Converte nosso tipo FetchBody em BodyInit (quando preciso). */
+/** Converte nosso FetchBody em BodyInit conforme o content-type */
 function toBodyInit(body: FetchBody, contentType: string | undefined): BodyInit | undefined {
   if (body === undefined) return undefined;
 
-  // Se o header indica JSON, serializa JsonValue.
+  // Se for JSON explícito
   if (contentType && contentType.includes('application/json')) {
     return JSON.stringify(body as JsonValue);
   }
 
-  // Se já for BodyInit (FormData, URLSearchParams, Blob etc.), retorna direto.
+  // Se já for BodyInit nativo, retorna como está
   if (
     body instanceof FormData ||
     body instanceof URLSearchParams ||
@@ -69,7 +67,7 @@ function toBodyInit(body: FetchBody, contentType: string | undefined): BodyInit 
     return body as BodyInit;
   }
 
-  // Sem content-type forçado: fallback para JSON seguro.
+  // Fallback: serializa como JSON
   return JSON.stringify(body as JsonValue);
 }
 
@@ -96,13 +94,107 @@ async function handleResponse<T>(res: Response): Promise<T> {
   return (isJson ? await res.json() : await res.text()) as T;
 }
 
+/** Normaliza headers (sem usar any) */
 function buildHeaders(extra?: HeadersInit): Record<string, string> {
-  // Normalizamos para um record string-string sem usar `any`.
-  const out: Record<string, string> = {
-    Accept: 'application/json',
-  };
+  const out: Record<string, string> = { Accept: 'application/json' };
 
   if (extra instanceof Headers) {
     extra.forEach((v, k) => {
       out[k] = v;
+    });
+  } else if (Array.isArray(extra)) {
+    for (const [k, v] of extra) {
+      out[String(k)] = String(v);
     }
+  } else if (extra && typeof extra === 'object') {
+    for (const [k, v] of Object.entries(extra)) {
+      out[String(k)] = String(v);
+    }
+  }
+
+  return out;
+}
+
+/** GET */
+export async function apiGet<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const headers = buildHeaders(init.headers);
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...init,
+    method: 'GET',
+    credentials: 'include',
+    headers,
+  });
+  return handleResponse<T>(res);
+}
+
+/** POST */
+export async function apiPost<T>(
+  path: string,
+  body?: FetchBody,
+  init: RequestInit = {},
+): Promise<T> {
+  const headers = buildHeaders(init.headers);
+  if (body !== undefined && headers['Content-Type'] === undefined) {
+    headers['Content-Type'] = 'application/json';
+  }
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...init,
+    method: 'POST',
+    credentials: 'include',
+    headers,
+    body: toBodyInit(body, headers['Content-Type']),
+  });
+  return handleResponse<T>(res);
+}
+
+/** PUT */
+export async function apiPut<T>(
+  path: string,
+  body?: FetchBody,
+  init: RequestInit = {},
+): Promise<T> {
+  const headers = buildHeaders(init.headers);
+  if (body !== undefined && headers['Content-Type'] === undefined) {
+    headers['Content-Type'] = 'application/json';
+  }
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...init,
+    method: 'PUT',
+    credentials: 'include',
+    headers,
+    body: toBodyInit(body, headers['Content-Type']),
+  });
+  return handleResponse<T>(res);
+}
+
+/** PATCH */
+export async function apiPatch<T>(
+  path: string,
+  body?: FetchBody,
+  init: RequestInit = {},
+): Promise<T> {
+  const headers = buildHeaders(init.headers);
+  if (body !== undefined && headers['Content-Type'] === undefined) {
+    headers['Content-Type'] = 'application/json';
+  }
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...init,
+    method: 'PATCH',
+    credentials: 'include',
+    headers,
+    body: toBodyInit(body, headers['Content-Type']),
+  });
+  return handleResponse<T>(res);
+}
+
+/** DELETE */
+export async function apiDelete<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const headers = buildHeaders(init.headers);
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...init,
+    method: 'DELETE',
+    credentials: 'include',
+    headers,
+  });
+  return handleResponse<T>(res);
+}
