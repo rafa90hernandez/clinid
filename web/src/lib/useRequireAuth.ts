@@ -2,59 +2,32 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { apiGet, ApiError } from '@/lib/api';
+import { useRouter } from 'next/navigation';
+import { TOKEN_STORAGE_KEY } from './api';
 
-export type Me = {
-  id: string;
-  email: string;
-  role?: string | null;
-  firstName?: string | null;
-  lastName?: string | null;
-  createdAt?: string;
-};
-
-type UseRequireAuthResult = {
-  me: Me | null;
-  ready: boolean; // true quando já sabemos se há sessão (com ou sem usuário)
-};
-
-export function useRequireAuth(): UseRequireAuthResult {
-  const [me, setMe] = useState<Me | null>(null);
-  const [ready, setReady] = useState(false);
+/**
+ * Hook simples de proteção de rota:
+ * - Se não houver token no localStorage, redireciona para /login
+ * - Retorna { loading } para você exibir um skeleton/spinner enquanto decide
+ */
+export function useRequireAuth() {
+  const router = useRouter();
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let cancelled = false;
+    try {
+      const token = typeof window !== 'undefined'
+        ? localStorage.getItem(TOKEN_STORAGE_KEY)
+        : null;
 
-    async function load() {
-      try {
-        // apiGet<Me> retorna o JSON tipado diretamente (sem .data)
-        const meRes = await apiGet<Me>('/accounts/me');
-        if (cancelled) return;
-        setMe(meRes ?? null);
-      } catch (err: unknown) {
-        // Se seu api.ts já redireciona em 401, aqui só marcamos como pronto
-        if (err instanceof ApiError) {
-          if (err.status === 401) {
-            if (!cancelled) setMe(null);
-          } else {
-            // Outros erros de API: considere logar/telemetria
-            if (!cancelled) setMe(null);
-          }
-        } else {
-          if (!cancelled) setMe(null);
-        }
-      } finally {
-        if (!cancelled) setReady(true);
+      if (!token) {
+        router.replace('/login');
+        return;
       }
+    } finally {
+      setLoading(false);
     }
+  }, [router]);
 
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  return { me, ready };
+  return { loading };
 }
-
-export default useRequireAuth;

@@ -1,5 +1,8 @@
 // web/src/lib/api.ts
 
+/** Chave única para guardar o token no localStorage */
+export const TOKEN_STORAGE_KEY = 'token';
+
 export const API_URL =
   process.env.NEXT_PUBLIC_API_URL?.replace(/\/+$/, '') || '';
 
@@ -47,7 +50,6 @@ async function parseMaybeJson(res: Response): Promise<unknown> {
     try {
       return await res.json();
     } catch {
-      // ignora parse error
       return null;
     }
   }
@@ -55,9 +57,8 @@ async function parseMaybeJson(res: Response): Promise<unknown> {
 }
 
 function buildUrl(path: string): string {
-  // aceita caminho absoluto (http/https), ou prefixa com API_URL
   if (/^https?:\/\//i.test(path)) return path;
-  if (!API_URL) return path; // em dev local sem env, pode falhar — ok
+  if (!API_URL) return path;
   const base = API_URL.replace(/\/+$/, '');
   const p = path.startsWith('/') ? path : `/${path}`;
   return `${base}${p}`;
@@ -94,17 +95,14 @@ async function request<T>(
 
   if (!res.ok) {
     const parsed = await parseMaybeJson(res);
-    // parênteses para não misturar ?? e ||
     const message = (extractMessage(parsed) ?? res.statusText) || 'Erro na requisição';
     throw new ApiError(message, res.status, res, parsed);
   }
 
-  // tenta parsear JSON no sucesso também
   const parsed = await parseMaybeJson(res);
   return parsed as T;
 }
 
-// Helpers por método
 export function apiGet<T>(path: string, extra?: Omit<ExtraInit, 'body' | 'json'>) {
   return request<T>('GET', path, extra);
 }

@@ -1,91 +1,92 @@
 // web/src/app/login/page.tsx
 'use client';
 
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { apiPost, ApiError } from '@/lib/api';
+import { apiPost, ApiError, TOKEN_STORAGE_KEY } from '@/lib/api';
+
+type LoginResponse = {
+  access_token?: string;
+};
 
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [err, setErr] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  const [submitting, setSubmitting] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-
-  async function onSubmit(e: React.FormEvent) {
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setErrorMsg(null);
-    setSubmitting(true);
+    setErr(null);
+    setLoading(true);
 
     try {
-      // Chama a API diretamente, sem rewrite
-      await apiPost<{ access_token?: string }>(
-        '/accounts/login',
+      const data = await apiPost<LoginResponse>(
+        '/auth/login',
         { email: email.trim(), password },
         { withAuth: false },
       );
 
-      // sucesso => redireciona para home
+      // Se a API também coloca cookie httpOnly, ok; mas seguimos salvando o token
+      if (data?.access_token) {
+        localStorage.setItem(TOKEN_STORAGE_KEY, data.access_token);
+      }
+
       router.replace('/');
-    } catch (err) {
-      if (err instanceof ApiError) {
-        if (err.status === 401) {
-          setErrorMsg('Credenciais inválidas.');
+    } catch (e) {
+      if (e instanceof ApiError) {
+        if (e.status === 401) {
+          setErr(e.message || 'Credenciais inválidas');
         } else {
-          // tenta mensagem vinda da API (já extraída no ApiError)
-          setErrorMsg(err.message || 'Erro ao fazer login.');
+          setErr(e.message || 'Falha ao entrar. Tente novamente.');
         }
       } else {
-        setErrorMsg('Erro inesperado ao fazer login.');
+        setErr('Falha ao entrar. Tente novamente.');
       }
     } finally {
-      setSubmitting(false);
+      setLoading(false);
     }
   }
 
   return (
-    <div className="mx-auto max-w-md px-4 py-10">
-      <h1 className="text-2xl font-semibold mb-6">Entrar</h1>
+    <main className="max-w-md mx-auto p-6">
+      <h1 className="text-2xl font-bold mb-4">Entrar</h1>
       <form onSubmit={onSubmit} className="space-y-4">
-        <label className="block">
-          <span className="text-sm">Email</span>
+        <div>
+          <label className="block text-sm mb-1">Email</label>
           <input
             type="email"
-            className="mt-1 w-full rounded border px-3 py-2"
-            placeholder="voce@exemplo.com"
+            className="w-full border rounded px-3 py-2"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            autoComplete="email"
+            placeholder="seu@email.com"
             required
           />
-        </label>
+        </div>
 
-        <label className="block">
-          <span className="text-sm">Senha</span>
+        <div>
+          <label className="block text-sm mb-1">Senha</label>
           <input
             type="password"
-            className="mt-1 w-full rounded border px-3 py-2"
-            placeholder="sua senha"
+            className="w-full border rounded px-3 py-2"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            autoComplete="current-password"
+            placeholder="••••••••"
             required
           />
-        </label>
-
-        {errorMsg && (
-          <p className="text-sm text-red-600">{errorMsg}</p>
-        )}
+        </div>
 
         <button
           type="submit"
-          className="rounded bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
-          disabled={submitting}
+          disabled={loading}
+          className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded px-4 py-2"
         >
-          {submitting ? 'Entrando…' : 'Entrar'}
+          {loading ? 'Entrando...' : 'Entrar'}
         </button>
+
+        {err && <p className="mt-3 text-red-700">{err}</p>}
       </form>
-    </div>
+    </main>
   );
 }
