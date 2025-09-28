@@ -1,125 +1,123 @@
 // web/src/lib/api.ts
 
-/** Chave única para guardar o token no localStorage */
+/** Chave única para o token no localStorage (mantida em um único lugar) */
 export const TOKEN_STORAGE_KEY = 'token';
 
+/** Base URL da API (Render: defina NEXT_PUBLIC_API_URL nas envs do serviço Web) */
 export const API_URL =
-  process.env.NEXT_PUBLIC_API_URL?.replace(/\/+$/, '') || '';
+  (process.env.NEXT_PUBLIC_API_URL?.replace(/\/+$/, '') as string | undefined) ||
+  'http://localhost:3001';
 
+/** Init extra aceitando headers/flags, mas sem permitir sobrescrever method/body/credentials */
+export type ExtraInit = Omit<RequestInit, 'method' | 'body' | 'credentials'> & {
+  /** Se true, adiciona Authorization: Bearer <token> se houver */
+  withAuth?: boolean;
+};
+
+/** Erro aplicacional com status opcional */
 export class ApiError extends Error {
-  status: number;
-  response: Response;
-  payload: unknown;
-
-  constructor(message: string, status: number, response: Response, payload: unknown) {
+  status?: number;
+  constructor(message: string, status?: number) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
-    this.response = response;
-    this.payload = payload;
   }
 }
 
-type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+/** Type guard simples para objetos */
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null;
+}
 
-export type ExtraInit = {
-  headers?: Record<string, string>;
-  /** Pass-through do body nativo do fetch */
-  body?: BodyInit | null;
-  /** Atalho: serializa como JSON e define Content-Type automaticamente */
-  json?: unknown;
-  /** Se true, envia credenciais (cookies). Padrão: true */
-  withAuth?: boolean;
-  /** Sinal do AbortController, opcional */
-  signal?: AbortSignal;
-};
+/** Extrai mensagem padrão de respostas de erro JSON típicas da API Nest */
+function extractMessage(v: unknown): string | undefined {
+  if (!isRecord(v)) return undefined;
 
-/** Tenta extrair uma mensagem amigável do payload de erro */
-function extractMessage(p: unknown): string | undefined {
-  if (p && typeof p === 'object') {
-    // @ts-expect-error tentativa best-effort
-    const msg = (p.message ?? p.error ?? p.detail) as unknown;
-    if (typeof msg === 'string') return msg;
-  }
+  // Nest padrão: { message: "texto", error: "Unauthorized", statusCode: 401 }
+  const m = v['message'];
+  if (typeof m === 'string') return m;
+  if (Array.isArray(m) && m.length && typeof m[0] === 'string') return m[0];
+
+  // Algumas APIs usam { error: "texto" }
+  const e = v['error'];
+  if (typeof e === 'string') return e;
+
   return undefined;
 }
 
-async function parseMaybeJson(res: Response): Promise<unknown> {
-  const ct = res.headers.get('content-type') || '';
-  if (ct.includes('application/json')) {
-    try {
-      return await res.json();
-    } catch {
-      return null;
-    }
-  }
-  return null;
-}
-
+/** Monta URL absoluta para a API */
 function buildUrl(path: string): string {
-  if (/^https?:\/\//i.test(path)) return path;
-  if (!API_URL) return path;
-  const base = API_URL.replace(/\/+$/, '');
-  const p = path.startsWith('/') ? path : `/${path}`;
-  return `${base}${p}`;
+  const clean = path.startsWith('/') ? path : `/${path}`;
+  return `${API_URL}${clean}`;
 }
 
-async function request<T>(
-  method: HttpMethod,
+/** Core request: já envia credentials: 'include' para cookies httpOnly */
+async function request<TResponse>(
   path: string,
-  extra: ExtraInit = {},
-): Promise<T> {
+  init: RequestInit & { withAuth?: boolean }
+): Promise<TResponse> {
   const url = buildUrl(path);
 
   const headers: Record<string, string> = {
-    ...(extra.headers || {}),
+    'Content-Type': 'application/json',
   };
 
-  let body: BodyInit | null | undefined = extra.body;
-
-  if (extra.json !== undefined) {
-    headers['Content-Type'] = headers['Content-Type'] || 'application/json';
-    body = JSON.stringify(extra.json);
+  if (init.headers) {
+    for (const [k, v] of Object.entries(init.headers)) {
+      if (typeof v === 'string') headers[k] = v;
+    }
   }
 
-  const withAuth = extra.withAuth !== false; // padrão true
+  // Token opcional via header (se você quiser usar além de cookie)
+  if (init.withAuth && typeof window !== 'undefined') {
+    const token = localStorage.getItem(TOKEN_STORAGE_KEY);
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+  }
 
   const res = await fetch(url, {
-    method,
+    ...init,
     headers,
-    body,
-    credentials: withAuth ? 'include' : 'omit',
-    signal: extra.signal,
-    cache: 'no-store',
+    credentials: 'include',
   });
 
   if (!res.ok) {
-    const parsed = await parseMaybeJson(res);
+    let parsed: unknown = undefined;
+    try {
+      parsed = await res.json();
+    } catch {
+      /* ignore */
+    }
+    // Corrige precedência: primeiro ?? depois ||
     const message = (extractMessage(parsed) ?? res.statusText) || 'Erro na requisição';
-    throw new ApiError(message, res.status, res, parsed);
+    throw new ApiError(message, res.status);
   }
 
-  const parsed = await parseMaybeJson(res);
-  return parsed as T;
+  if (res.status === 204) return undefined as TResponse;
+
+  try {
+    return (await res.json()) as TResponse;
+  } catch {
+    throw new ApiError('Resposta inválida da API (JSON esperado).', res.status);
+  }
 }
 
-export function apiGet<T>(path: string, extra?: Omit<ExtraInit, 'body' | 'json'>) {
-  return request<T>('GET', path, extra);
+/** Helpers HTTP */
+export function apiGet<T>(path: string, extra?: ExtraInit) {
+  return request<T>(path, { method: 'GET', ...extra });
 }
 
-export function apiPost<T>(path: string, body?: unknown, extra?: Omit<ExtraInit, 'body' | 'json'>) {
-  return request<T>('POST', path, { ...(extra || {}), json: body });
+export function apiPost<T>(path: string, body?: unknown, extra?: ExtraInit) {
+  return request<T>(path, { method: 'POST', body: JSON.stringify(body ?? {}), ...extra });
 }
 
-export function apiPut<T>(path: string, body?: unknown, extra?: Omit<ExtraInit, 'body' | 'json'>) {
-  return request<T>('PUT', path, { ...(extra || {}), json: body });
+export function apiPut<T>(path: string, body?: unknown, extra?: ExtraInit) {
+  return request<T>(path, { method: 'PUT', body: JSON.stringify(body ?? {}), ...extra });
 }
 
-export function apiPatch<T>(path: string, body?: unknown, extra?: Omit<ExtraInit, 'body' | 'json'>) {
-  return request<T>('PATCH', path, { ...(extra || {}), json: body });
+export function apiPatch<T>(path: string, body?: unknown, extra?: ExtraInit) {
+  return request<T>(path, { method: 'PATCH', body: JSON.stringify(body ?? {}), ...extra });
 }
 
-/** DELETE pode enviar corpo usando extra.json (ou extra.body). */
 export function apiDelete<T>(path: string, extra?: ExtraInit) {
-  return request<T>('DELETE', path, extra || {});
+  return request<T>(path, { method: 'DELETE', ...extra });
 }

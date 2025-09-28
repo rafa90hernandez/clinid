@@ -2,36 +2,39 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { TOKEN_STORAGE_KEY } from './api';
 
 /**
- * Hook de proteção de rota:
- * - Se NÃO houver token no localStorage, redireciona para /login
- * - Retorna { loading, ready }:
- *    - loading: true enquanto decide/redirect
- *    - ready:   !loading (útil para telas que aguardam o gate)
+ * Garante que a página só seja acessada autenticado.
+ * Redireciona para /login se não houver token local.
+ *
+ * Retorna { loading } (true enquanto decide/redirect).
  */
 export function useRequireAuth() {
   const router = useRouter();
+  const pathname = usePathname();
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Garante execução apenas no cliente
-    if (typeof window === 'undefined') return;
-
-    const token = localStorage.getItem(TOKEN_STORAGE_KEY);
-
-    if (!token) {
-      // sem token => envia para login
-      router.replace('/login');
-      // não marcamos loading=false aqui para evitar flicker de conteúdo protegido
+    // Evita loop no /login
+    if (pathname === '/login') {
+      setLoading(false);
       return;
     }
 
-    // com token => liberado
-    setLoading(false);
-  }, [router]);
+    const hasWindow = typeof window !== 'undefined';
+    const token = hasWindow ? localStorage.getItem(TOKEN_STORAGE_KEY) : null;
 
-  return { loading, ready: !loading };
+    if (!token) {
+      // sem token -> manda para login
+      router.replace('/login');
+      return;
+    }
+
+    // ok, segue
+    setLoading(false);
+  }, [pathname, router]);
+
+  return { loading };
 }
