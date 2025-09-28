@@ -1,123 +1,215 @@
 // web/src/lib/api.ts
+/* eslint-disable @typescript-eslint/consistent-type-definitions */
 
-/** Chave única para o token no localStorage (mantida em um único lugar) */
 export const TOKEN_STORAGE_KEY = 'token';
-
-/** Base URL da API (Render: defina NEXT_PUBLIC_API_URL nas envs do serviço Web) */
 export const API_URL =
-  (process.env.NEXT_PUBLIC_API_URL?.replace(/\/+$/, '') as string | undefined) ||
-  'http://localhost:3001';
+  process.env.NEXT_PUBLIC_API_URL && /^https?:\/\//.test(process.env.NEXT_PUBLIC_API_URL)
+    ? process.env.NEXT_PUBLIC_API_URL
+    : 'http://localhost:3001';
 
-/** Init extra aceitando headers/flags, mas sem permitir sobrescrever method/body/credentials */
-export type ExtraInit = Omit<RequestInit, 'method' | 'body' | 'credentials'> & {
-  /** Se true, adiciona Authorization: Bearer <token> se houver */
+export type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonValue[]
+  | { [k: string]: JsonValue | undefined };
+
+export type JsonBody = Record<string, JsonValue | undefined>;
+
+type QueryValue = string | number | boolean | undefined;
+
+export interface ExtraInit {
+  headers?: Record<string, string>;
+  query?: Record<string, QueryValue>;
   withAuth?: boolean;
-};
+  credentials?: RequestCredentials;
+  signal?: AbortSignal;
+}
 
-/** Erro aplicacional com status opcional */
-export class ApiError extends Error {
-  status?: number;
-  constructor(message: string, status?: number) {
+export class ApiError<T = unknown> extends Error {
+  public readonly status: number;
+  public readonly res: Response;
+  public readonly data: T | null;
+
+  constructor(message: string, status: number, res: Response, data: T | null) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
+    this.res = res;
+    this.data = data;
   }
 }
 
-/** Type guard simples para objetos */
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null;
+function buildUrl(path: string, query?: ExtraInit['query']): string {
+  const base = API_URL.replace(/\/+$/, '');
+  const p = path.startsWith('/') ? path : `/${path}`;
+
+  if (!query) return `${base}${p}`;
+
+  const usp = new URLSearchParams();
+  for (const [k, v] of Object.entries(query)) {
+    if (v === undefined) continue;
+    usp.set(k, String(v));
+  }
+  const qs = usp.toString();
+  return qs ? `${base}${p}?${qs}` : `${base}${p}`;
 }
 
-/** Extrai mensagem padrão de respostas de erro JSON típicas da API Nest */
-function extractMessage(v: unknown): string | undefined {
-  if (!isRecord(v)) return undefined;
-
-  // Nest padrão: { message: "texto", error: "Unauthorized", statusCode: 401 }
-  const m = v['message'];
-  if (typeof m === 'string') return m;
-  if (Array.isArray(m) && m.length && typeof m[0] === 'string') return m[0];
-
-  // Algumas APIs usam { error: "texto" }
-  const e = v['error'];
-  if (typeof e === 'string') return e;
-
-  return undefined;
+function getAuthHeader(withAuth?: boolean): Record<string, string> {
+  if (!withAuth) return {};
+  if (typeof window === 'undefined') return {};
+  const token = window.localStorage.getItem(TOKEN_STORAGE_KEY);
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-/** Monta URL absoluta para a API */
-function buildUrl(path: string): string {
-  const clean = path.startsWith('/') ? path : `/${path}`;
-  return `${API_URL}${clean}`;
+function isExtraInit(candidate: unknown): candidate is ExtraInit {
+  if (!candidate || typeof candidate !== 'object') return false;
+  const keys = new Set(Object.keys(candidate as Record<string, unknown>));
+  // heurística: chaves típicas de ExtraInit
+  const known = ['headers', 'query', 'withAuth', 'credentials', 'signal'];
+  return known.some((k) => keys.has(k));
 }
 
-/** Core request: já envia credentials: 'include' para cookies httpOnly */
-async function request<TResponse>(
-  path: string,
-  init: RequestInit & { withAuth?: boolean }
-): Promise<TResponse> {
-  const url = buildUrl(path);
+async function safeParseJson<T>(res: Response): Promise<T | null> {
+  const ct = res.headers.get('content-type') ?? '';
+  if (!ct.includes('application/json')) return null;
+  try {
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
+}
 
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  };
-
-  if (init.headers) {
-    for (const [k, v] of Object.entries(init.headers)) {
-      if (typeof v === 'string') headers[k] = v;
+function extractMessage(data: unknown): string | null {
+  if (data && typeof data === 'object') {
+    const obj = data as Record<string, unknown>;
+    const possible = ['message', 'error', 'detail'];
+    for (const k of possible) {
+      const v = obj[k];
+      if (typeof v === 'string' && v.trim()) return v;
     }
   }
+  return null;
+}
 
-  // Token opcional via header (se você quiser usar além de cookie)
-  if (init.withAuth && typeof window !== 'undefined') {
-    const token = localStorage.getItem(TOKEN_STORAGE_KEY);
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+async function apiRequest<T = unknown>(
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+  path: string,
+  body?: unknown,
+  extra?: ExtraInit,
+): Promise<T> {
+  const url = buildUrl(path, extra?.query);
+
+  const headers: Record<string, string> = {
+    ...(extra?.headers ?? {}),
+    ...getAuthHeader(extra?.withAuth),
+  };
+
+  let finalBody: BodyInit | undefined;
+
+  if (body instanceof FormData) {
+    finalBody = body;
+    // não define Content-Type manualmente
+  } else if (typeof body !== 'undefined' && body !== null) {
+    headers['Content-Type'] = headers['Content-Type'] ?? 'application/json';
+    finalBody = JSON.stringify(body);
   }
 
   const res = await fetch(url, {
-    ...init,
+    method,
     headers,
-    credentials: 'include',
+    body: method === 'GET' ? undefined : finalBody,
+    credentials: extra?.credentials ?? 'include',
+    signal: extra?.signal,
   });
 
+  const parsed = await safeParseJson<T>(res);
+
   if (!res.ok) {
-    let parsed: unknown = undefined;
-    try {
-      parsed = await res.json();
-    } catch {
-      /* ignore */
-    }
-    // Corrige precedência: primeiro ?? depois ||
-    const message = (extractMessage(parsed) ?? res.statusText) || 'Erro na requisição';
-    throw new ApiError(message, res.status);
+    const msg = (extractMessage(parsed) ?? res.statusText) || 'Erro na requisição';
+
+    throw new ApiError<T>(msg, res.status, res, parsed);
   }
 
-  if (res.status === 204) return undefined as TResponse;
+  return (parsed ?? (undefined as T)) as T;
+}
 
-  try {
-    return (await res.json()) as TResponse;
-  } catch {
-    throw new ApiError('Resposta inválida da API (JSON esperado).', res.status);
+/* ---------------- GET ---------------- */
+
+export function apiGet<T = unknown>(path: string, extra?: ExtraInit): Promise<T> {
+  return apiRequest<T>('GET', path, undefined, extra);
+}
+
+/* ---------------- POST ---------------- */
+
+export function apiPost<T = unknown>(path: string, body: unknown): Promise<T>;
+export function apiPost<T = unknown>(path: string, body: unknown, extra: ExtraInit): Promise<T>;
+export function apiPost<T = unknown>(
+  path: string,
+  bodyOrExtra?: unknown,
+  maybeExtra?: ExtraInit,
+): Promise<T> {
+  const body = bodyOrExtra;
+  const extra = maybeExtra;
+  return apiRequest<T>('POST', path, body, extra);
+}
+
+/* ---------------- PUT ---------------- */
+
+export function apiPut<T = unknown>(path: string, body: unknown): Promise<T>;
+export function apiPut<T = unknown>(path: string, body: unknown, extra: ExtraInit): Promise<T>;
+export function apiPut<T = unknown>(
+  path: string,
+  bodyOrExtra?: unknown,
+  maybeExtra?: ExtraInit,
+): Promise<T> {
+  const body = bodyOrExtra;
+  const extra = maybeExtra;
+  return apiRequest<T>('PUT', path, body, extra);
+}
+
+/* ---------------- PATCH ---------------- */
+
+export function apiPatch<T = unknown>(path: string, body: unknown): Promise<T>;
+export function apiPatch<T = unknown>(path: string, body: unknown, extra: ExtraInit): Promise<T>;
+export function apiPatch<T = unknown>(
+  path: string,
+  bodyOrExtra?: unknown,
+  maybeExtra?: ExtraInit,
+): Promise<T> {
+  const body = bodyOrExtra;
+  const extra = maybeExtra;
+  return apiRequest<T>('PATCH', path, body, extra);
+}
+
+/* ---------------- DELETE ---------------- */
+
+export function apiDelete<T = unknown>(path: string): Promise<T>;
+export function apiDelete<T = unknown>(path: string, extra: ExtraInit): Promise<T>;
+export function apiDelete<T = unknown>(path: string, body: unknown, extra: ExtraInit): Promise<T>;
+export function apiDelete<T = unknown>(
+  path: string,
+  second?: unknown,
+  third?: ExtraInit,
+): Promise<T> {
+  // Overloads aceitam (path), (path, extra) e (path, body, extra)
+  let body: unknown = undefined;
+  let extra: ExtraInit | undefined = undefined;
+
+  if (typeof second === 'undefined') {
+    // (path)
+    body = undefined;
+    extra = undefined;
+  } else if (isExtraInit(second)) {
+    // (path, extra)
+    body = undefined;
+    extra = second;
+  } else {
+    // (path, body, extra?)
+    body = second;
+    extra = third;
   }
-}
 
-/** Helpers HTTP */
-export function apiGet<T>(path: string, extra?: ExtraInit) {
-  return request<T>(path, { method: 'GET', ...extra });
-}
-
-export function apiPost<T>(path: string, body?: unknown, extra?: ExtraInit) {
-  return request<T>(path, { method: 'POST', body: JSON.stringify(body ?? {}), ...extra });
-}
-
-export function apiPut<T>(path: string, body?: unknown, extra?: ExtraInit) {
-  return request<T>(path, { method: 'PUT', body: JSON.stringify(body ?? {}), ...extra });
-}
-
-export function apiPatch<T>(path: string, body?: unknown, extra?: ExtraInit) {
-  return request<T>(path, { method: 'PATCH', body: JSON.stringify(body ?? {}), ...extra });
-}
-
-export function apiDelete<T>(path: string, extra?: ExtraInit) {
-  return request<T>(path, { method: 'DELETE', ...extra });
+  return apiRequest<T>('DELETE', path, body, extra);
 }
