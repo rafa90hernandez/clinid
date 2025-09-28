@@ -13,7 +13,11 @@ export default function DeleteAccountPage() {
     setMsg(null);
     setLoading(true);
     try {
-      await apiDelete('/me/account', { confirmLoginPassword: password });
+      await apiDelete(
+        '/auth/me/account',
+        undefined,
+        { json: { confirmLoginPassword: password } },
+      );
       setMsg('Conta excluída com sucesso. Você será redirecionado.');
       localStorage.removeItem('token');
       setTimeout(() => (window.location.href = '/login'), 1500);
