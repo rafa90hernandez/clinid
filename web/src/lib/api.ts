@@ -16,6 +16,10 @@ type RequestOpts = {
   withAuth?: boolean;
   /** Headers extras se necessário */
   headers?: Record<string, string>;
+  /** Envia um corpo arbitrário sem serialização automática */
+  body?: BodyInit | null;
+  /** Converte o valor informado em JSON e aplica Content-Type */
+  json?: unknown;
 };
 
 interface ApiError extends Error {
@@ -31,18 +35,88 @@ function parseJsonSafely(text: string): unknown {
   }
 }
 
-async function request<T>(
-  method: HttpMethod,
-  path: string,
-  body?: unknown,
-  opts?: RequestOpts
-): Promise<T> {
-  const withAuth = opts?.withAuth ?? true;
+function isBodyInit(value: unknown): value is BodyInit {
+  return (
+    typeof value === 'string' ||
+    value instanceof Blob ||
+    value instanceof ArrayBuffer ||
+    ArrayBuffer.isView(value as ArrayBufferView) ||
+    value instanceof FormData ||
+    value instanceof URLSearchParams ||
+    value instanceof ReadableStream
+  );
+}
 
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...(opts?.headers ?? {}),
-  };
+function mergeBody(body: unknown, opts?: RequestOpts): RequestOpts {
+  const nextOpts: RequestOpts = { ...(opts ?? {}) };
+
+  if (body === undefined) {
+    return nextOpts;
+  }
+
+  if (body === null) {
+    nextOpts.body = null;
+    return nextOpts;
+  }
+
+  if (isBodyInit(body)) {
+    nextOpts.body = body;
+    return nextOpts;
+  }
+
+  nextOpts.json = body;
+  return nextOpts;
+}
+
+const REQUEST_OPT_KEYS = new Set(['withAuth', 'headers', 'body', 'json'] as const);
+
+function isRequestOptsLike(value: unknown): value is RequestOpts {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  const keys = Object.keys(value);
+  if (keys.length === 0) return false;
+
+  return keys.every((key) => REQUEST_OPT_KEYS.has(key as keyof RequestOpts));
+}
+
+function buildRequestOpts(body: unknown, opts?: RequestOpts): RequestOpts {
+  if (opts !== undefined) {
+    return mergeBody(body, opts);
+  }
+
+  if (isRequestOptsLike(body)) {
+    return { ...(body as RequestOpts) };
+  }
+
+  return mergeBody(body, undefined);
+}
+
+async function request<T>(method: HttpMethod, path: string, opts?: RequestOpts): Promise<T> {
+  const { withAuth = true, headers: extraHeaders, json, body } = opts ?? {};
+
+  const headers: Record<string, string> = { ...(extraHeaders ?? {}) };
+
+  let payload: BodyInit | null | undefined;
+
+  if (body !== undefined) {
+    if (body === null) {
+      payload = null;
+    } else if (isBodyInit(body)) {
+      payload = body;
+    } else {
+      payload = JSON.stringify(body);
+      if (!('Content-Type' in headers)) {
+        headers['Content-Type'] = 'application/json';
+      }
+    }
+  } else if (json !== undefined) {
+    payload = JSON.stringify(json);
+    if (!('Content-Type' in headers)) {
+      headers['Content-Type'] = 'application/json';
+    }
+  }
 
   if (withAuth && typeof window !== 'undefined') {
     const token = localStorage.getItem('token');
@@ -56,7 +130,7 @@ async function request<T>(
   const res = await fetch(url, {
     method,
     headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body: payload ?? undefined,
     // same-origin resolve cookies/CSRF se algum dia usar; ok para NGINX
     credentials: 'include',
     redirect: 'follow',
@@ -94,16 +168,16 @@ async function request<T>(
 }
 
 export const apiGet = <T>(path: string, opts?: RequestOpts) =>
-  request<T>('GET', path, undefined, opts);
+  request<T>('GET', path, opts);
 
 export const apiPost = <T>(path: string, body: unknown, opts?: RequestOpts) =>
-  request<T>('POST', path, body, opts);
+  request<T>('POST', path, buildRequestOpts(body, opts));
 
 export const apiPut = <T>(path: string, body: unknown, opts?: RequestOpts) =>
-  request<T>('PUT', path, body, opts);
+  request<T>('PUT', path, buildRequestOpts(body, opts));
 
 export const apiPatch = <T>(path: string, body: unknown, opts?: RequestOpts) =>
-  request<T>('PATCH', path, body, opts);
+  request<T>('PATCH', path, buildRequestOpts(body, opts));
 
 export const apiDelete = <T>(path: string, body?: unknown, opts?: RequestOpts) =>
-  request<T>('DELETE', path, body, opts);
+  request<T>('DELETE', path, buildRequestOpts(body, opts));
