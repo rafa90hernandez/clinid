@@ -7,9 +7,11 @@ import { TOKEN_STORAGE_KEY } from './api';
 
 /**
  * Garante que a página só seja acessada autenticado.
- * Redireciona para /login se não houver token local.
+ * - Redireciona para /login se não houver token local.
  *
- * Retorna { loading } (true enquanto decide/redirect).
+ * Retorna:
+ * - loading: true enquanto decide/redirect
+ * - ready: alias para !loading (mantém compatibilidade com código existente)
  */
 export function useRequireAuth() {
   const router = useRouter();
@@ -27,14 +29,15 @@ export function useRequireAuth() {
     const token = hasWindow ? localStorage.getItem(TOKEN_STORAGE_KEY) : null;
 
     if (!token) {
-      // sem token -> manda para login
       router.replace('/login');
       return;
     }
 
-    // ok, segue
     setLoading(false);
   }, [pathname, router]);
 
-  return { loading };
+  // Compat: muitos lugares usam { ready }. Mantemos por enquanto.
+  const ready = !loading;
+
+  return { loading, ready };
 }
