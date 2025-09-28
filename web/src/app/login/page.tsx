@@ -33,7 +33,8 @@ export default function LoginPage() {
         // opcional: a API também retorna { access_token } no body
         const data = (await res.json().catch(() => null)) as { access_token?: string } | null;
         if (data?.access_token && typeof window !== 'undefined') {
-          localStorage.setItem('access_token', data.access_token);
+          localStorage.setItem('token', data.access_token);
+          localStorage.removeItem('access_token');
         }
         router.replace('/'); // vai para o dashboard
         return;
