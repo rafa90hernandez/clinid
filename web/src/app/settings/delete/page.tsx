@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+import { apiDelete } from '@/lib/api';
 
 export default function DeleteAccountPage() {
   const [password, setPassword] = useState('');
@@ -13,16 +13,7 @@ export default function DeleteAccountPage() {
     setMsg(null);
     setLoading(true);
     try {
-      const token = localStorage.getItem('token') ?? '';
-      const res = await fetch(`${API_BASE}/me/account`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ confirmLoginPassword: password }),
-      });
-      if (!res.ok) throw new Error(await res.text());
+      await apiDelete('/me/account', { confirmLoginPassword: password });
       setMsg('Conta excluída com sucesso. Você será redirecionado.');
       localStorage.removeItem('token');
       setTimeout(() => (window.location.href = '/login'), 1500);
