@@ -24,15 +24,20 @@ export default function DeleteAccountPage() {
     try {
       setSubmitting(true);
 
-      await apiDelete<unknown>('/accounts', {
-        // Serializa o objeto JavaScript para uma string JSON
-        body: JSON.stringify({ confirmLoginPassword: password }),
-        // Define o cabeçalho Content-Type para informar ao servidor que estamos enviando JSON
-        headers: {
-          'Content-Type': 'application/json',
+      // CORREÇÃO AQUI: Passando o body como segundo argumento e o extra como terceiro
+      await apiDelete<unknown>(
+        '/accounts', // Primeiro argumento: path
+        { confirmLoginPassword: password }, // Segundo argumento: body (será stringificado automaticamente pelo apiRequest)
+        {
+          // Terceiro argumento: extra (ExtraInit)
+          // O Content-Type será adicionado automaticamente pelo apiRequest,
+          // mas você pode deixá-lo aqui para ser explícito ou para sobrescrever
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          withAuth: true,
         },
-        withAuth: true,
-      });
+      );
       setMsg('Conta excluída com sucesso. Você será redirecionado.');
       setTimeout(() => router.replace('/login'), 1500);
     } catch (err: unknown) {

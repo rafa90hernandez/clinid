@@ -25,8 +25,7 @@ export interface ExtraInit {
   withAuth?: boolean;
   credentials?: RequestCredentials;
   signal?: AbortSignal;
-  body?: unknown,
-  json?: object;
+  // `json?: object;` foi removido pois o 'body' é passado como argumento separado nas funções apiX, não como parte do ExtraInit
 }
 
 export class ApiError<T = unknown> extends Error {
@@ -96,7 +95,7 @@ function extractMessage(data: unknown): string | null {
 }
 
 async function apiRequest<T = unknown>(
-  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD',
   path: string,
   body?: unknown,
   extra?: ExtraInit,
@@ -114,6 +113,7 @@ async function apiRequest<T = unknown>(
     finalBody = body;
     // não define Content-Type manualmente
   } else if (typeof body !== 'undefined' && body !== null) {
+    // Apenas define Content-Type se ainda não estiver definido
     headers['Content-Type'] = headers['Content-Type'] ?? 'application/json';
     finalBody = JSON.stringify(body);
   }
@@ -121,7 +121,8 @@ async function apiRequest<T = unknown>(
   const res = await fetch(url, {
     method,
     headers,
-    body: method === 'GET' ? undefined : finalBody,
+    // Em requisições GET, HEAD, o body deve ser undefined
+    body: method === 'GET' || method === 'HEAD' ? undefined : finalBody,
     credentials: extra?.credentials ?? 'include',
     signal: extra?.signal,
   });
@@ -134,83 +135,153 @@ async function apiRequest<T = unknown>(
     throw new ApiError<T>(msg, res.status, res, parsed);
   }
 
-  return (parsed ?? (undefined as T)) as T;
+  // Se o tipo esperado T é 'void' ou 'undefined',
+  // retornamos undefined em vez de um objeto parcialmente preenchido
+  if (parsed === null && (typeof undefined === typeof parsed)) { 
+      return undefined as T;
+  }
+  
+  // Mantém a lógica original de retorno, garantindo que 'parsed' é do tipo T
+  return (parsed ?? undefined) as T; 
 }
 
 /* ---------------- GET ---------------- */
 
-export function apiGet<T = unknown>(path: string, extra?: ExtraInit): Promise<T> {
+export function apiGet<T = unknown>(path: string): Promise<T>;
+export function apiGet<T = unknown>(path: string, extra: ExtraInit): Promise<T>;
+export function apiGet<T = unknown>(
+  path: string,
+  extra?: ExtraInit,
+): Promise<T> {
   return apiRequest<T>('GET', path, undefined, extra);
 }
 
 /* ---------------- POST ---------------- */
 
-export function apiPost<T = unknown>(path: string, body: unknown): Promise<T>;
-export function apiPost<T = unknown>(path: string, body: unknown, extra: ExtraInit): Promise<T>;
+// NOVAS SOBRECARGAS E IMPLEMENTAÇÃO PADRONIZADA
+export function apiPost<T = unknown>(path: string): Promise<T>; // Permite 1 argumento (path, sem body, sem extra)
+export function apiPost<T = unknown>(path: string, body: unknown): Promise<T>; // Permite 2 argumentos (path, body, sem extra)
+export function apiPost<T = unknown>(path: string, extra: ExtraInit): Promise<T>; // Permite 2 argumentos (path, sem body, com extra)
+export function apiPost<T = unknown>(path: string, body: unknown, extra: ExtraInit): Promise<T>; // Permite 3 argumentos (path, body, extra)
 export function apiPost<T = unknown>(
   path: string,
-  bodyOrExtra?: unknown,
-  maybeExtra?: ExtraInit,
+  secondArg?: unknown, // Pode ser body ou extra
+  thirdArg?: ExtraInit, // Pode ser extra se secondArg for body
 ): Promise<T> {
-  const body = bodyOrExtra;
-  const extra = maybeExtra;
+  // Overloads aceitam (path), (path, body), (path, extra) e (path, body, extra)
+  let body: unknown = undefined;
+  let extra: ExtraInit | undefined = undefined;
+
+  if (typeof secondArg === 'undefined') {
+    // Caso: apiPost(path)
+    body = undefined;
+    extra = undefined;
+  } else if (isExtraInit(secondArg)) {
+    // Caso: apiPost(path, extra)
+    body = undefined;
+    extra = secondArg;
+  } else {
+    // Caso: apiPost(path, body) ou apiPost(path, body, extra?)
+    body = secondArg;
+    extra = thirdArg;
+  }
+
   return apiRequest<T>('POST', path, body, extra);
 }
 
 /* ---------------- PUT ---------------- */
 
-export function apiPut<T = unknown>(path: string, body: unknown): Promise<T>;
-export function apiPut<T = unknown>(path: string, body: unknown, extra: ExtraInit): Promise<T>;
+// NOVAS SOBRECARGAS E IMPLEMENTAÇÃO PADRONIZADA
+export function apiPut<T = unknown>(path: string): Promise<T>; // Permite 1 argumento (path, sem body, sem extra)
+export function apiPut<T = unknown>(path: string, body: unknown): Promise<T>; // Permite 2 argumentos (path, body, sem extra)
+export function apiPut<T = unknown>(path: string, extra: ExtraInit): Promise<T>; // Permite 2 argumentos (path, sem body, com extra)
+export function apiPut<T = unknown>(path: string, body: unknown, extra: ExtraInit): Promise<T>; // Permite 3 argumentos (path, body, extra)
 export function apiPut<T = unknown>(
   path: string,
-  bodyOrExtra?: unknown,
-  maybeExtra?: ExtraInit,
+  secondArg?: unknown, // Pode ser body ou extra
+  thirdArg?: ExtraInit, // Pode ser extra se secondArg for body
 ): Promise<T> {
-  const body = bodyOrExtra;
-  const extra = maybeExtra;
+  // Overloads aceitam (path), (path, body), (path, extra) e (path, body, extra)
+  let body: unknown = undefined;
+  let extra: ExtraInit | undefined = undefined;
+
+  if (typeof secondArg === 'undefined') {
+    // Caso: apiPut(path)
+    body = undefined;
+    extra = undefined;
+  } else if (isExtraInit(secondArg)) {
+    // Caso: apiPut(path, extra)
+    body = undefined;
+    extra = secondArg;
+  } else {
+    // Caso: apiPut(path, body) ou apiPut(path, body, extra?)
+    body = secondArg;
+    extra = thirdArg;
+  }
+
   return apiRequest<T>('PUT', path, body, extra);
 }
 
 /* ---------------- PATCH ---------------- */
 
-export function apiPatch<T = unknown>(path: string, body: unknown): Promise<T>;
-export function apiPatch<T = unknown>(path: string, body: unknown, extra: ExtraInit): Promise<T>;
+// NOVAS SOBRECARGAS E IMPLEMENTAÇÃO PADRONIZADA
+export function apiPatch<T = unknown>(path: string): Promise<T>; // Permite 1 argumento (path, sem body, sem extra)
+export function apiPatch<T = unknown>(path: string, body: unknown): Promise<T>; // Permite 2 argumentos (path, body, sem extra)
+export function apiPatch<T = unknown>(path: string, extra: ExtraInit): Promise<T>; // Permite 2 argumentos (path, sem body, com extra)
+export function apiPatch<T = unknown>(path: string, body: unknown, extra: ExtraInit): Promise<T>; // Permite 3 argumentos (path, body, extra)
 export function apiPatch<T = unknown>(
   path: string,
-  bodyOrExtra?: unknown,
-  maybeExtra?: ExtraInit,
+  secondArg?: unknown, // Pode ser body ou extra
+  thirdArg?: ExtraInit, // Pode ser extra se secondArg for body
 ): Promise<T> {
-  const body = bodyOrExtra;
-  const extra = maybeExtra;
+  // Overloads aceitam (path), (path, body), (path, extra) e (path, body, extra)
+  let body: unknown = undefined;
+  let extra: ExtraInit | undefined = undefined;
+
+  if (typeof secondArg === 'undefined') {
+    // Caso: apiPatch(path)
+    body = undefined;
+    extra = undefined;
+  } else if (isExtraInit(secondArg)) {
+    // Caso: apiPatch(path, extra)
+    body = undefined;
+    extra = secondArg;
+  } else {
+    // Caso: apiPatch(path, body) ou apiPatch(path, body, extra?)
+    body = secondArg;
+    extra = thirdArg;
+  }
+
   return apiRequest<T>('PATCH', path, body, extra);
 }
 
 /* ---------------- DELETE ---------------- */
 
+// As sobrecargas e implementação de apiDelete já estavam corretas e flexíveis
 export function apiDelete<T = unknown>(path: string): Promise<T>;
 export function apiDelete<T = unknown>(path: string, extra: ExtraInit): Promise<T>;
 export function apiDelete<T = unknown>(path: string, body: unknown, extra: ExtraInit): Promise<T>;
 export function apiDelete<T = unknown>(
   path: string,
-  second?: unknown,
-  third?: ExtraInit,
+  secondArg?: unknown, // Renomeado para consistência
+  thirdArg?: ExtraInit, // Renomeado para consistência
 ): Promise<T> {
   // Overloads aceitam (path), (path, extra) e (path, body, extra)
   let body: unknown = undefined;
   let extra: ExtraInit | undefined = undefined;
 
-  if (typeof second === 'undefined') {
+  if (typeof secondArg === 'undefined') {
     // (path)
     body = undefined;
     extra = undefined;
-  } else if (isExtraInit(second)) {
+  } else if (isExtraInit(secondArg)) {
     // (path, extra)
     body = undefined;
-    extra = second;
+    extra = secondArg;
   } else {
     // (path, body, extra?)
-    body = second;
-    extra = third;
+    body = secondArg;
+    extra = thirdArg;
   }
 
   return apiRequest<T>('DELETE', path, body, extra);
