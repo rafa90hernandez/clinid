@@ -25,6 +25,8 @@ export interface ExtraInit {
   withAuth?: boolean;
   credentials?: RequestCredentials;
   signal?: AbortSignal;
+  body?: unknown,
+  json?: object;
 }
 
 export class ApiError<T = unknown> extends Error {

@@ -1,92 +1,243 @@
-// web/src/app/login/page.tsx
 'use client';
 
-import { useState } from 'react';
+import { Logo } from '@/components/logo';
 import { useRouter } from 'next/navigation';
-import { apiPost, ApiError, TOKEN_STORAGE_KEY } from '@/lib/api';
-
-type LoginResponse = {
-  access_token?: string;
-};
+import { useCallback, useState } from 'react';
+import { apiPost } from '@/lib/api';
 
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [err, setErr] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setErr(null);
-    setLoading(true);
+  const canSubmit = email.trim().length > 0 && password.length > 0 && !submitting;
 
-    try {
-      const data = await apiPost<LoginResponse>(
-        '/auth/login',
-        { email: email.trim(), password },
-        { withAuth: false },
-      );
+  const onSubmit = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!canSubmit) return;
 
-      // Se a API também coloca cookie httpOnly, ok; mas seguimos salvando o token
-      if (data?.access_token) {
-        localStorage.setItem(TOKEN_STORAGE_KEY, data.access_token);
-      }
+      setSubmitting(true);
+      setError(null);
 
-      router.replace('/');
-    } catch (e) {
-      if (e instanceof ApiError) {
-        if (e.status === 401) {
-          setErr(e.message || 'Credenciais inválidas');
+      try {
+        // ✅ caminho correto no backend:
+        const resp = await apiPost<{ access_token?: string; ok?: boolean }>(
+          '/accounts/login',
+          { email: email.trim(), password },
+          { withAuth: false }
+        );
+
+        // Compat: se vier token no corpo, guardamos numa chave única usada pelo app
+        if (resp?.access_token) {
+          localStorage.setItem('token', resp.access_token);
         } else {
-          setErr(e.message || 'Falha ao entrar. Tente novamente.');
+          // Se login é só cookie, gravamos um flag leve para hooks client-side (se precisarem)
+          localStorage.setItem('logged_in', '1');
         }
-      } else {
-        setErr('Falha ao entrar. Tente novamente.');
+
+        // Redireciona para home após sucesso
+        router.replace('/');
+      } catch (err: unknown) {
+        // Mensagens amigáveis
+        const message =
+          err instanceof Error
+            ? err.message
+            : typeof err === 'string'
+              ? err
+              : 'Falha ao entrar. Verifique suas credenciais.';
+        setError(message);
+      } finally {
+        setSubmitting(false);
       }
-    } finally {
-      setLoading(false);
-    }
-  }
+    },
+    [email, password, canSubmit, router]
+  );
 
   return (
-    <main className="max-w-md mx-auto p-6">
-      <h1 className="text-2xl font-bold mb-4">Entrar</h1>
-      <form onSubmit={onSubmit} className="space-y-4">
-        <div>
-          <label className="block text-sm mb-1">Email</label>
+    <div style={styles.page}>
+      <div style={styles.card}>
+        {/* Título da tela (cinza, canto superior esquerdo) */}
+        <div style={styles.headerTitle}>Tela Login</div>
+
+        {/* Logo central */}
+        <div style={styles.logoWrap}>
+          {/* Use a sua imagem real se já existir em /public. Fallback: texto estilizado */}
+          <Logo />
+          <div style={styles.logoBadge}>
+            <div style={styles.logoPlus}>+</div>
+            <div>
+              <div style={styles.logoTitle}>ClinID</div>
+              <div style={styles.logoSubtitle}>Soluções emergenciais</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Linha fina */}
+        <div style={styles.divider} />
+
+        {/* Formulário */}
+        <form onSubmit={onSubmit} style={styles.form}>
+          <label style={styles.label}>E-Mail</label>
           <input
             type="email"
-            className="w-full border rounded px-3 py-2"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="seu@email.com"
+            onChange={(e) => setEmail(e.currentTarget.value)}
+            placeholder=""
+            style={styles.input}
+            autoComplete="email"
             required
           />
-        </div>
 
-        <div>
-          <label className="block text-sm mb-1">Senha</label>
+          <label style={{ ...styles.label, marginTop: 16 }}>Senha</label>
           <input
             type="password"
-            className="w-full border rounded px-3 py-2"
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="••••••••"
+            onChange={(e) => setPassword(e.currentTarget.value)}
+            placeholder=""
+            style={styles.input}
+            autoComplete="current-password"
             required
           />
-        </div>
 
-        <button
-          type="submit"
-          disabled={loading}
-          className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded px-4 py-2"
-        >
-          {loading ? 'Entrando...' : 'Entrar'}
-        </button>
+          {/* Links: cadastro & recuperar senha */}
+          <div style={styles.linksWrap}>
+            <div>Ainda não possui cadastro?</div>
+            <a href="/register" style={styles.link}>
+              Cadastre-se aqui
+            </a>
+            <a href="/recover" style={styles.link}>
+              Recuperar Senha
+            </a>
+          </div>
 
-        {err && <p className="mt-3 text-red-700">{err}</p>}
-      </form>
-    </main>
+          {/* Erro */}
+          {error ? <div style={styles.error}>{error}</div> : null}
+
+          {/* Botão */}
+          <button type="submit" disabled={!canSubmit} style={{ ...styles.button, ...(canSubmit ? {} : styles.buttonDisabled) }}>
+            {submitting ? 'Entrando…' : 'Entrar'}
+          </button>
+        </form>
+      </div>
+    </div>
   );
 }
+
+/** Estilos inline simples para ficar bem próximo ao protótipo enviado */
+const styles: Record<string, React.CSSProperties> = {
+  page: {
+    minHeight: '100dvh',
+    background: '#222', // moldura escura externa, como no protótipo
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+  },
+  card: {
+    width: 320,
+    background: '#E8EDFF', // azul clarinho de fundo
+    borderRadius: 6,
+    position: 'relative',
+    padding: 20,
+    boxShadow: '0 0 0 1px rgba(0,0,0,0.06) inset',
+  },
+  headerTitle: {
+    position: 'absolute',
+    top: 8,
+    left: 10,
+    color: '#8A8A8A',
+    fontSize: 14,
+    fontWeight: 600,
+  },
+  logoWrap: {
+    display: 'flex',
+    justifyContent: 'center',
+    marginTop: 26,
+    marginBottom: 22,
+  },
+  logoBadge: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    background: '#fff',
+    padding: '12px 16px',
+    borderRadius: 14,
+    boxShadow: '0 4px 14px rgba(0,0,0,0.12)',
+  },
+  logoPlus: {
+    color: '#13B3F3',
+    fontSize: 28,
+    fontWeight: 800,
+    marginRight: 4,
+  },
+  logoTitle: {
+    color: '#13B3F3',
+    fontWeight: 800,
+    fontSize: 28,
+    lineHeight: 1,
+  },
+  logoSubtitle: {
+    color: '#4BA8C8',
+    fontSize: 12,
+    marginTop: -2,
+  },
+  divider: {
+    height: 2,
+    width: 80,
+    background: '#111',
+    margin: '0 auto 18px auto',
+  },
+  form: {
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  label: {
+    fontSize: 13,
+    marginBottom: 6,
+    color: '#333',
+  },
+  input: {
+    height: 34,
+    borderRadius: 6,
+    border: '1px solid rgba(0,0,0,0.1)',
+    background: '#fff',
+    padding: '0 10px',
+    outline: 'none',
+  },
+  linksWrap: {
+    textAlign: 'center',
+    marginTop: 12,
+    marginBottom: 10,
+    color: '#444',
+    fontSize: 12,
+    lineHeight: 1.35,
+  },
+  link: {
+    display: 'block',
+    color: '#0b79d0',
+    textDecoration: 'none',
+    marginTop: 4,
+  },
+  error: {
+    color: '#b00020',
+    fontSize: 12,
+    margin: '6px 0 10px 0',
+    textAlign: 'center',
+  },
+  button: {
+    height: 36,
+    borderRadius: 8,
+    border: '1px solid rgba(0,0,0,0.06)',
+    background: '#cfe0f7', // azul clarinho do protótipo
+    color: '#0f2b4d',
+    fontWeight: 700,
+    cursor: 'pointer',
+  },
+  buttonDisabled: {
+    opacity: 0.6,
+    cursor: 'not-allowed',
+  },
+};
