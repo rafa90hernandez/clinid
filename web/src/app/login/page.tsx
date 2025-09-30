@@ -125,20 +125,10 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',     // Centraliza verticalmente
     minHeight: '100vh',       // Ocupa 100% da altura da viewport
     width: '100vw',           // Ocupa 100% da largura da viewport
-    background: '#f0f2f5',    // Um fundo suave para toda a página
+    background: '#E8EDFF',    // Um fundo suave para toda a página
     // Adiciona padding para garantir que o card não toque as bordas em telas muito pequenas
-    padding: '20px', 
+    padding: '20px',
     boxSizing: 'border-box', // Garante que padding não adicione largura/altura extra
-  },
-  card: {
-    // AJUSTADO: Para ser responsivo, usa maxWidth e uma largura percentual
-    width: '100%',            // Ocupa 100% da largura disponível (até o maxWidth)
-    maxWidth: 380,            // Limita a largura máxima do card
-    background: '#E8EDFF',    // azul clarinho de fundo
-    borderRadius: 6,
-    position: 'relative',
-    padding: 20,
-    boxShadow: '0 0 0 1px rgba(0,0,0,0.06) inset',
   },
   headerTitle: {
     position: 'absolute',
