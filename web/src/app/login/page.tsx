@@ -59,20 +59,10 @@ export default function LoginPage() {
   return (
     <div style={styles.page}>
       <div style={styles.card}>
-        {/* Título da tela (cinza, canto superior esquerdo) */}
-        <div style={styles.headerTitle}>Tela Login</div>
 
         {/* Logo central */}
         <div style={styles.logoWrap}>
-          {/* Use a sua imagem real se já existir em /public. Fallback: texto estilizado */}
           <Logo />
-          <div style={styles.logoBadge}>
-            <div style={styles.logoPlus}>+</div>
-            <div>
-              <div style={styles.logoTitle}>ClinID</div>
-              <div style={styles.logoSubtitle}>Soluções emergenciais</div>
-            </div>
-          </div>
         </div>
 
         {/* Linha fina */}
@@ -128,14 +118,6 @@ export default function LoginPage() {
 
 /** Estilos inline simples para ficar bem próximo ao protótipo enviado */
 const styles: Record<string, React.CSSProperties> = {
-  page: {
-    minHeight: '100dvh',
-    background: '#222', // moldura escura externa, como no protótipo
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 12,
-  },
   card: {
     width: 320,
     background: '#E8EDFF', // azul clarinho de fundo

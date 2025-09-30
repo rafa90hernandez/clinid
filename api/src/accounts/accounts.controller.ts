@@ -24,6 +24,12 @@ function cookieOptsForEnv() {
   // Se front e API estiverem em origens diferentes em produção, use SameSite=None + Secure
   const crossSite = process.env.CROSS_SITE_COOKIES === 'true';
 
+  console.log('Backend Env: NODE_ENV =', process.env.NODE_ENV);
+  console.log('Backend Env: CROSS_SITE_COOKIES =', process.env.CROSS_SITE_COOKIES);
+  console.log('Computed crossSite variable =', crossSite);
+  console.log('Computed sameSite option =', crossSite ? 'none' : 'lax');
+  console.log('Computed secure option =', crossSite ? true : isProd);
+  
   return {
     httpOnly: true,
     path: '/',
@@ -35,7 +41,7 @@ function cookieOptsForEnv() {
 
 @Controller('accounts')
 export class AccountsController {
-  constructor(private readonly accounts: AccountsService) {}
+  constructor(private readonly accounts: AccountsService) { }
 
   @Post('register')
   async register(@Body() dto: RegisterDto) {
