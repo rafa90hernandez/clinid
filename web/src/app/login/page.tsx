@@ -98,7 +98,7 @@ export default function LoginPage() {
             <a href="/register" style={styles.link}>
               Cadastre-se aqui
             </a>
-            <a href="/recover" style={styles.link}>
+            <a href="/forgot" style={styles.link}> {/* Corrigido de /recover para /forgot conforme seu middleware */}
               Recuperar Senha
             </a>
           </div>
@@ -118,9 +118,23 @@ export default function LoginPage() {
 
 /** Estilos inline simples para ficar bem próximo ao protótipo enviado */
 const styles: Record<string, React.CSSProperties> = {
+  page: {
+    // ESTILOS ADICIONADOS/MODIFICADOS AQUI para centralizar e ocupar a tela inteira
+    display: 'flex',
+    justifyContent: 'center', // Centraliza horizontalmente
+    alignItems: 'center',     // Centraliza verticalmente
+    minHeight: '100vh',       // Ocupa 100% da altura da viewport
+    width: '100vw',           // Ocupa 100% da largura da viewport
+    background: '#f0f2f5',    // Um fundo suave para toda a página
+    // Adiciona padding para garantir que o card não toque as bordas em telas muito pequenas
+    padding: '20px', 
+    boxSizing: 'border-box', // Garante que padding não adicione largura/altura extra
+  },
   card: {
-    width: 320,
-    background: '#E8EDFF', // azul clarinho de fundo
+    // AJUSTADO: Para ser responsivo, usa maxWidth e uma largura percentual
+    width: '100%',            // Ocupa 100% da largura disponível (até o maxWidth)
+    maxWidth: 380,            // Limita a largura máxima do card
+    background: '#E8EDFF',    // azul clarinho de fundo
     borderRadius: 6,
     position: 'relative',
     padding: 20,

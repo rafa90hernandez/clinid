@@ -20,28 +20,29 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 
 /** Helper: opções de cookie de acordo com o ambiente */
 function cookieOptsForEnv() {
+  // CORRIGIDO: NODE_ENV deve ser comparado com 'production' para verificar se é ambiente de produção.
   const isProd = process.env.NODE_ENV === 'production';
+
   // Se front e API estiverem em origens diferentes em produção, use SameSite=None + Secure
   const crossSite = process.env.CROSS_SITE_COOKIES === 'true';
 
-  console.log('Backend Env: NODE_ENV =', process.env.NODE_ENV);
-  console.log('Backend Env: CROSS_SITE_COOKIES =', process.env.CROSS_SITE_COOKIES);
-  console.log('Computed crossSite variable =', crossSite);
-  console.log('Computed sameSite option =', crossSite ? 'none' : 'lax');
-  console.log('Computed secure option =', crossSite ? true : isProd);
-  
+  // NOVO: Lê o domínio do cookie da variável de ambiente COOKIE_DOMAIN
+  // Isso permite que o cookie seja compartilhado entre subdomínios (ex: .onrender.com)
+  const cookieDomain = process.env.COOKIE_DOMAIN || undefined;
+
   return {
     httpOnly: true,
     path: '/',
     maxAge: 1000 * 60 * 60 * 8, // 8h
     sameSite: crossSite ? ('none' as const) : ('lax' as const),
     secure: crossSite ? true : isProd, // SameSite=None exige secure:true
+    domain: cookieDomain, // <<<< Esta linha CRÍTICA adiciona o atributo Domain ao cookie
   };
 }
 
 @Controller('accounts')
 export class AccountsController {
-  constructor(private readonly accounts: AccountsService) { }
+  constructor(private readonly accounts: AccountsService) {}
 
   @Post('register')
   async register(@Body() dto: RegisterDto) {
@@ -63,9 +64,9 @@ export class AccountsController {
     // que não sejam navegador, mas o frontend NÃO DEVERÁ MAIS depender dela para a autenticação principal.
     res.cookie('auth_token', token.access_token, opts);
 
-    // ALTERAÇÃO CRUCIAL AQUI: Retorna o objeto 'token' completo, que contém 'access_token'
-    // O frontend agora deve ler este valor do corpo da resposta.
-    return token; // Isso fará com que a resposta JSON seja { "access_token": "..." }
+    // Retorna o objeto 'token' completo, que contém 'access_token'.
+    // O frontend pode usar este valor para localStorage ou outras necessidades específicas de cliente.
+    return token;
   }
 
   @UseGuards(JwtAuthGuard)
@@ -99,10 +100,12 @@ export class AccountsController {
   logout(@Res({ passthrough: true }) res: Response) {
     const opts = cookieOptsForEnv();
     // usar as mesmas flags ajuda alguns browsers a remover o cookie
+    // O atributo 'domain' também deve ser incluído na clearCookie para garantir que o cookie correto seja apagado.
     res.clearCookie('auth_token', {
       path: opts.path,
       sameSite: opts.sameSite,
       secure: opts.secure,
+      domain: opts.domain, // <<<< Importante adicionar aqui também
     });
     return { ok: true };
   }
