@@ -41,6 +41,7 @@ services:
       - "3000:3000"
     environment:
       INTERNAL_API_BASE: "http://api:3001"
+      API_BACKEND_URL: "http://api:3001"
       NEXT_PUBLIC_API_URL: "/api"
       NODE_ENV: development
     working_dir: /app

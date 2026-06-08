@@ -1,133 +1,85 @@
 // web/src/app/api/[...path]/route.ts
+
 import { NextResponse, type NextRequest } from 'next/server';
 
-export const runtime = 'nodejs'; // Especifica o runtime para Node.js
-export const dynamic = 'force-dynamic'; // Garante que a rota não seja estaticamente otimizada
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
-// É CRUCIAL que esta variável de ambiente seja configurada no ambiente
-// do seu serviço Next.js (frontend) no Render.
-// Ela deve apontar para a URL PÚBLICA do seu serviço de API de backend.
-const API_BACKEND_URL = process.env.API_BACKEND_URL || 'https://clinid.onrender.com';
+const API_BACKEND_URL =
+  process.env.API_BACKEND_URL?.replace(/\/+$/, '') || 'https://clinid.onrender.com';
 
-/**
- * Constrói a URL completa para a requisição ao backend.
- * @param path O array de segmentos de caminho da URL.
- * @param req A requisição NextRequest original.
- * @returns A URL completa para o backend.
- */
+type RouteContext = {
+  params: Promise<{
+    path?: string[];
+  }>;
+};
+
 function buildUpstreamUrl(path: string[], req: NextRequest): URL {
-  // Garante que a URL base não termine com barra para evitar barras duplas
-  const base = API_BACKEND_URL.endsWith('/') ? API_BACKEND_URL.slice(0, -1) : API_BACKEND_URL;
-  // Codifica cada segmento do caminho para garantir URLs válidas
   const pathname = path.map(encodeURIComponent).join('/');
-  const url = new URL(`${base}/${pathname}`);
-  // Copia os parâmetros de query da requisição original (ex: ?param=value)
+  const url = new URL(`${API_BACKEND_URL}/${pathname}`);
   url.search = req.nextUrl.search;
   return url;
 }
 
-/**
- * Filtra e encaminha os cabeçalhos da requisição original para o backend.
- * @param req A requisição NextRequest original.
- * @returns Um novo objeto Headers com os cabeçalhos a serem encaminhados.
- */
 function forwardRequestHeaders(req: NextRequest): Headers {
-  const h = new Headers(req.headers);
-  // Remove cabeçalhos que são específicos do cliente para o proxy,
-  // e que não devem ser encaminhados para o backend diretamente.
-  h.delete('host'); // O host será o do backend
-  h.delete('content-length'); // O fetch recalcula automaticamente
-  h.delete('accept-encoding'); // Deixa o 'fetch' lidar com a compressão
-  // O cabeçalho 'origin' é mantido para que o backend possa fazer suas próprias
-  // verificações CORS com base no domínio do frontend (clinid-frontend.onrender.com).
+  const headers = new Headers(req.headers);
 
-  // Define um cabeçalho 'Accept' padrão se não houver um.
-  if (!h.get('accept')) {
-    h.set('accept', 'application/json');
+  headers.delete('host');
+  headers.delete('content-length');
+  headers.delete('accept-encoding');
+
+  if (!headers.get('accept')) {
+    headers.set('accept', 'application/json');
   }
-  return h;
+
+  return headers;
 }
 
-/**
- * Copia os cabeçalhos da resposta do backend para a resposta do proxy.
- * @param upstream A resposta do backend.
- * @returns Um novo objeto Headers com os cabeçalhos da resposta do backend.
- */
 function copyUpstreamHeaders(upstream: Response): Headers {
-  const out = new Headers();
-  upstream.headers.forEach((v, k) => {
-    // Copia todos os cabeçalhos da resposta do backend.
-    // Em alguns cenários, pode ser necessário filtrar ou ajustar 'set-cookie'
-    // se o backend estiver tentando definir cookies para um domínio diferente
-    // do domínio do frontend (o que causaria bloqueios de navegador).
-    // No nosso caso atual, o `access_token` será lido do corpo da resposta,
-    // então a cópia de `set-cookie` (HttpOnly) não afetará o fluxo de auth principal.
-    out.append(k, v);
+  const headers = new Headers();
+
+  upstream.headers.forEach((value, key) => {
+    headers.append(key, value);
   });
-  return out;
+
+  return headers;
 }
 
-/**
- * Função principal do proxy que faz a requisição ao backend.
- * @param method O método HTTP da requisição (GET, POST, etc.).
- * @param req A requisição NextRequest original.
- * @param path O array de segmentos de caminho para o backend.
- * @returns A resposta do proxy para o cliente.
- */
 async function proxyRequest(method: string, req: NextRequest, path: string[]): Promise<Response> {
   const url = buildUpstreamUrl(path, req);
   const headers = forwardRequestHeaders(req);
 
-  let requestBody: ReadableStream | Buffer | null = null;
-  // Para métodos que podem ter um corpo (POST, PUT, PATCH, DELETE),
-  // lê o corpo da requisição original.
-  if (!['GET', 'HEAD'].includes(method)) {
-    // 'req.body' já é um ReadableStream, que é mais eficiente para o fetch.
-    if (req.body) {
-      requestBody = req.body;
-    }
-  }
+  const hasBody = !['GET', 'HEAD'].includes(method) && req.body;
 
-  // Faz a requisição ao backend.
-  const upstream = await fetch(url, {
+  const init: RequestInit & { duplex?: 'half' } = {
     method,
     headers,
-    body: requestBody, // Passa o corpo lido, se houver
-    redirect: 'manual', // Impede que o 'fetch' siga redirecionamentos automaticamente
-    // Isso dá mais controle ao proxy sobre redirecionamentos.
-  });
+    redirect: 'manual',
+  };
 
-  const respHeaders = copyUpstreamHeaders(upstream);
-  // Retorna a resposta do backend para o cliente do frontend, usando NextResponse.
+  if (hasBody) {
+    init.body = req.body;
+    init.duplex = 'half';
+  }
+
+  const upstream = await fetch(url, init);
+
   return new NextResponse(upstream.body, {
     status: upstream.status,
     statusText: upstream.statusText,
-    headers: respHeaders,
+    headers: copyUpstreamHeaders(upstream),
   });
 }
 
-/**
- * Handler unificado para todos os métodos HTTP.
- * @param req A requisição NextRequest.
- * @param ctx O contexto da rota, contendo os parâmetros dinâmicos (path).
- * @returns A resposta do proxy.
- */
-async function handleRequest(
-  req: NextRequest,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  ctx: any // CORRIGIDO: Voltando para 'any' para evitar erro de tipagem do Next.js
-): Promise<Response> {
-  const { path } = ctx.params;
-  const method = req.method;
-  return proxyRequest(method, req, path ?? []);
+async function handleRequest(req: NextRequest, ctx: RouteContext): Promise<Response> {
+  const params = await ctx.params;
+  return proxyRequest(req.method, req, params.path ?? []);
 }
 
-// Exporta o handler para cada método HTTP suportado.
-// Isso garante que todos os tipos de requisição sejam roteados pelo proxy.
 export const GET = handleRequest;
 export const POST = handleRequest;
 export const PUT = handleRequest;
 export const PATCH = handleRequest;
 export const DELETE = handleRequest;
 export const OPTIONS = handleRequest;
-export const HEAD = handleRequest; // Adicionado HEAD para completude
+export const HEAD = handleRequest;

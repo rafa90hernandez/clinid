@@ -2,10 +2,7 @@
 /* eslint-disable @typescript-eslint/consistent-type-definitions */
 
 export const TOKEN_STORAGE_KEY = 'token';
-export const API_URL =
-  process.env.NEXT_PUBLIC_API_URL && /^https?:\/\//.test(process.env.NEXT_PUBLIC_API_URL)
-    ? process.env.NEXT_PUBLIC_API_URL
-    : 'http://localhost:3001';
+export const API_URL = process.env.NEXT_PUBLIC_API_URL || '/api';
 
 export type JsonValue =
   | string
