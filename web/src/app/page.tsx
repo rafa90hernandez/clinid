@@ -48,7 +48,7 @@ export default function HomePage() {
         setError(null);
 
         // 1) Carrega /me e /me/profile primeiro
-        const meData = await apiGet<MeResponse>('/me');
+        const meData = await apiGet<MeResponse>('/accounts/me');
         const profileData = await apiGet<ProfileResponse>('/me/profile');
 
         if (cancelled) return;

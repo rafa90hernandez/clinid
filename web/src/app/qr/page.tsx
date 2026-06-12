@@ -65,22 +65,22 @@ export default function QrPage() { // Componente funcional para a página /qr
       };
 
       // API call para PUT /me/pin (para configurar o PIN do usuário)
-      await apiPut<unknown>('/me/pin', payload);
+      await apiPut<unknown>('/me/pin', payload, { withAuth: true });
 
       // 2) Gera (ou regera) o link público
-      const res = await apiPost<PublicLink>('/me/public-link', {});
+      const res = await apiPost<PublicLink>('/me/public-link', {}, { withAuth: true });
       const link = res;
       if (!link?.slug) throw new Error('Não foi possível gerar o link público.');
 
       // 3) Guarda o PIN no sessionStorage para que a página de acesso público possa pré-preencher
       // (usando uma chave específica para o slug)
       if (typeof window !== 'undefined') {
-        sessionStorage.setItem(`public_pin_for_${link.slug}`, pin); 
+        sessionStorage.setItem(`public_pin_for_${link.slug}`, pin);
       }
 
       setOk('QR Code gerado com sucesso.');
       // Aponta para a página de exibição do QR Code
-      router.replace(`/p/${link.slug}`); 
+      router.replace(`/p/${link.slug}`);
     } catch (e) {
       const msg =
         (isApiError(e) && e.message) ? e.message :
@@ -191,6 +191,21 @@ export default function QrPage() { // Componente funcional para a página /qr
           >
             {loading ? 'Gerando…' : 'Gerar QR Code'}
           </button>
+          <pre className="mt-4 rounded bg-white p-2 text-xs">
+            {JSON.stringify(
+              {
+                loading,
+                consent,
+                pinLength: pin.length,
+                confirmPinLength: confirmPin.length,
+                pinsMatch: pin === confirmPin,
+                loginPasswordLength: loginPassword.length,
+                canSubmit,
+              },
+              null,
+              2,
+            )}
+          </pre>
         </form>
       </div>
       <BottomNav />

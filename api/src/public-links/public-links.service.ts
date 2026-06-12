@@ -35,27 +35,40 @@ export class PublicLinksService {
         where: { slug: candidate },
         select: { id: true },
       });
+
       if (!collision) return candidate;
     }
-    // fallback extremamente improvável de colidir
+
     return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   }
 
   /**
-   * Cria um novo link “ativo”.
-   * - Revoga quaisquer antigos “ativos” do usuário (regra 1-ativo-por-usuário).
-   * - Garante slug único.
+   * Cria ou reativa o link público do usuário.
+   * Como o banco possui restrição única em userId, cada usuário tem apenas 1 PublicLink.
    */
   async generate(userId: string): Promise<PublicLinkView> {
-    // revoga todos os ativos anteriores
-    await this.prisma.publicLink.updateMany({
-      where: { userId, status: LinkStatus.ACTIVE },
-      data: { status: LinkStatus.REVOKED, revokedAt: new Date() },
+    const existing = await this.prisma.publicLink.findFirst({
+      where: { userId },
+      select: { id: true },
     });
 
-    // cria novo ativo
+    if (existing) {
+      const slug = await this.generateUniqueSlug();
+
+      return this.prisma.publicLink.update({
+        where: { id: existing.id },
+        data: {
+          slug,
+          status: LinkStatus.ACTIVE,
+          revokedAt: null,
+        },
+        select: selectPublicLinkView,
+      });
+    }
+
     const slug = await this.generateUniqueSlug();
-    const created: PublicLinkView = await this.prisma.publicLink.create({
+
+    const created = await this.prisma.publicLink.create({
       data: {
         id: randomUUID(),
         userId,
@@ -67,20 +80,20 @@ export class PublicLinksService {
     });
 
     if (!created) {
-      // teórico; create lança erro em caso de falha
       throw new BadRequestException('Não foi possível criar o link público.');
     }
 
     return created;
   }
 
-  /** Retorna o link ativo mais recente do usuário (ou null). */
+  /** Retorna o link ativo do usuário (ou null). */
   async getActiveByUser(userId: string): Promise<PublicLinkView | null> {
-    const row: PublicLinkView | null = await this.prisma.publicLink.findFirst({
+    const row = await this.prisma.publicLink.findFirst({
       where: { userId, status: LinkStatus.ACTIVE },
       orderBy: { createdAt: 'desc' },
       select: selectPublicLinkView,
     });
+
     return row ?? null;
   }
 
@@ -95,22 +108,22 @@ export class PublicLinksService {
       throw new NotFoundException('Link não encontrado.');
     }
 
-    const updated: PublicLinkView = await this.prisma.publicLink.update({
+    return this.prisma.publicLink.update({
       where: { id: linkId },
-      data: { status: LinkStatus.REVOKED, revokedAt: new Date() },
+      data: {
+        status: LinkStatus.REVOKED,
+        revokedAt: new Date(),
+      },
       select: selectPublicLinkView,
     });
-
-    return updated;
   }
 
   /** Lista todos os links do usuário, ordenados por criação (desc). */
   async listByUser(userId: string): Promise<PublicLinkView[]> {
-    const rows: PublicLinkView[] = await this.prisma.publicLink.findMany({
+    return this.prisma.publicLink.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
       select: selectPublicLinkView,
     });
-    return rows;
   }
 }
