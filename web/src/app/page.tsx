@@ -177,14 +177,14 @@ export default function HomePage() {
               </>
             )}
             <p className="mt-3 text-sm text-blue-600 hover:underline">
-              <Link href="/settings/public-link">Gerenciar link público</Link>
+              <Link href="/qr">Gerenciar link público</Link>
             </p>
           </div>
         ) : (
           <div className="mb-4 rounded-lg bg-white p-6 text-center text-gray-500 shadow-md">
             <p>Você ainda não configurou seu link público.</p>
             <p className="mt-2 text-sm text-blue-600 hover:underline">
-              <Link href="/settings/public-link">Configurar agora</Link>
+              <Link href="/qr">Configurar agora</Link>
             </p>
           </div>
         )}
