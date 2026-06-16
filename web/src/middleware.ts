@@ -9,12 +9,13 @@ const PUBLIC_EXACT = new Set<string>([
 
 // Prefixos públicos
 const PUBLIC_PREFIXES = [
-  '/p/',           // página pública protegida por PIN (ex.: /p/slug)
-  '/reset',        // tela de redefinição de senha via link
-  '/api',          // proxy do Next para a API Nest (não interceptar)
-  '/_next',        // assets internos do Next
-  '/favicon',      // ícone
-  '/images',       // estáticos
+  '/p/',
+  '/public-access/',
+  '/reset',
+  '/api',
+  '/_next',
+  '/favicon',
+  '/images',
   '/robots.txt',
   '/sitemap.xml',
 ] as const;
@@ -25,7 +26,7 @@ const ALLOW_WHEN_LOGGED_EXACT = new Set<string>([
   '/register',
   '/forgot',
 ]);
-const ALLOW_WHEN_LOGGED_PREFIXES = ['/p/', '/reset', '/api'] as const;
+const ALLOW_WHEN_LOGGED_PREFIXES = ['/p/', '/public-access/', '/reset', '/api'] as const;
 
 function isPublicPath(pathname: string): boolean {
   if (PUBLIC_EXACT.has(pathname)) return true;
