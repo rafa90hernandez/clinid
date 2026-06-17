@@ -6,7 +6,7 @@ import * as crypto from 'node:crypto';
 
 @Injectable()
 export class ProfilesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
 
   getMine(userId: string) {
     return this.prisma.clinicalProfile.findUnique({ where: { userId } });
@@ -21,8 +21,6 @@ export class ProfilesService {
 
     // UPDATE: só muda consentAt quando houver novo consentimento explícito
     const updateData: Prisma.ClinicalProfileUncheckedUpdateInput = {
-      firstName: dto.first_name ?? '',
-      lastName: dto.last_name ?? '',
       sex: dto.sex ?? null,
       emergencyContactName: dto.emergency_contact_name ?? null,
       emergencyContactPhone: dto.emergency_contact_phone ?? null,
@@ -42,8 +40,6 @@ export class ProfilesService {
       createdAt: now,
       updatedAt: now,
       consentAt: now, // <-- sempre presente no create
-      firstName: dto.first_name ?? '',
-      lastName: dto.last_name ?? '',
       sex: dto.sex ?? null,
       emergencyContactName: dto.emergency_contact_name ?? null,
       emergencyContactPhone: dto.emergency_contact_phone ?? null,
@@ -66,8 +62,6 @@ export class ProfilesService {
         id: crypto.randomUUID(),
         userId,
         snapshot: {
-          firstName: profile.firstName,
-          lastName: profile.lastName,
           sex: profile.sex,
           bloodType: profile.bloodType,
           allergies: profile.allergies,

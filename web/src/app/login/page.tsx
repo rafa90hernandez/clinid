@@ -1,11 +1,14 @@
 'use client';
 
 import { Logo } from '@/components/logo';
+import { apiPost } from '@/lib/api';
+import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useCallback, useState } from 'react';
-import { apiPost } from '@/lib/api';
 
 export default function LoginPage() {
+  const t = useTranslations('login');
+
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -42,13 +45,14 @@ export default function LoginPage() {
             ? err.message
             : typeof err === 'string'
               ? err
-              : 'Falha ao entrar. Verifique suas credenciais.';
+              : t('errors.invalidCredentials');
+
         setError(message);
       } finally {
         setSubmitting(false);
       }
     },
-    [email, password, canSubmit, router],
+    [email, password, canSubmit, router, t],
   );
 
   return (
@@ -62,13 +66,13 @@ export default function LoginPage() {
         </div>
 
         <div style={styles.titleWrap}>
-          <h1 style={styles.title}>Bem-vindo</h1>
-          <p style={styles.subtitle}>Acesse sua identificação clínica com segurança.</p>
+          <h1 style={styles.title}>{t('title')}</h1>
+          <p style={styles.subtitle}>{t('subtitle')}</p>
         </div>
 
         <form onSubmit={onSubmit} style={styles.form}>
           <div style={styles.fieldGroup}>
-            <label style={styles.label}>E-mail</label>
+            <label style={styles.label}>{t('email')}</label>
             <input
               type="email"
               value={email}
@@ -80,7 +84,7 @@ export default function LoginPage() {
           </div>
 
           <div style={styles.fieldGroup}>
-            <label style={styles.label}>Senha</label>
+            <label style={styles.label}>{t('password')}</label>
             <input
               type="password"
               value={password}
@@ -92,12 +96,14 @@ export default function LoginPage() {
           </div>
 
           <div style={styles.linksWrap}>
-            <span style={styles.helperText}>Ainda não possui cadastro?</span>
+            <span style={styles.helperText}>{t('noAccount')}</span>
+
             <a href="/register" style={styles.link}>
-              Cadastre-se aqui
+              {t('createAccount')}
             </a>
+
             <a href="/forgot" style={styles.link}>
-              Recuperar senha
+              {t('forgotPassword')}
             </a>
           </div>
 
@@ -111,7 +117,7 @@ export default function LoginPage() {
               ...(canSubmit ? styles.buttonEnabled : styles.buttonDisabled),
             }}
           >
-            {submitting ? 'Entrando…' : 'Entrar'}
+            {submitting ? t('signingIn') : t('signIn')}
           </button>
         </form>
       </section>

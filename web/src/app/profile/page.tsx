@@ -21,8 +21,6 @@ const EMPTY_BLOOD: BloodTypeOption = '';
 type ListItem = string;
 
 type ProfileResponse = {
-  firstName?: string | null;
-  lastName?: string | null;
   sex?: 'M' | 'F' | null;
   bloodType?: (typeof BLOOD_TYPES)[number] | null;
   allergies?: string[] | null;
@@ -33,21 +31,8 @@ type ProfileResponse = {
   emergencyContactPhone?: string | null;
 };
 
-function onlyDigits(s: string) {
-  return s.replace(/\D/g, '');
-}
-
-function formatPhoneBR(raw: string) {
-  const d = onlyDigits(raw).slice(0, 11);
-  const dd = d.slice(0, 2);
-  const nine = d.slice(2, 3);
-  const p1 = d.slice(3, 7);
-  const p2 = d.slice(7, 11);
-
-  if (d.length <= 2) return `(${dd}`;
-  if (d.length === 3) return `(${dd}) ${nine}`;
-  if (d.length <= 7) return `(${dd}) ${nine} ${p1}`;
-  return `(${dd}) ${nine} ${p1}-${p2}`;
+function formatPhoneInternational(raw: string) {
+  return raw.replace(/[^\d+()\-\s]/g, '').slice(0, 25);
 }
 
 function isSex(v: unknown): v is Exclude<SexOption, ''> {
@@ -67,8 +52,6 @@ export default function ProfilePage() {
   const [err, setErr] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
 
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
   const [sex, setSex] = useState<SexOption>(EMPTY_SEX);
   const [bloodType, setBloodType] = useState<BloodTypeOption>(EMPTY_BLOOD);
 
@@ -105,8 +88,6 @@ export default function ProfilePage() {
 
         if (!mounted) return;
 
-        setFirstName(data.firstName ?? '');
-        setLastName(data.lastName ?? '');
         setSex(isSex(data.sex) ? data.sex : EMPTY_SEX);
         setBloodType(isBloodType(data.bloodType) ? data.bloodType : EMPTY_BLOOD);
 
@@ -116,11 +97,9 @@ export default function ProfilePage() {
         setSurgeries(Array.isArray(data.surgeries) ? data.surgeries.slice(0, maxItems) : []);
 
         setEmgName(data.emergencyContactName ?? '');
-        setEmgPhone(data.emergencyContactPhone ? formatPhoneBR(data.emergencyContactPhone) : '');
+        setEmgPhone(data.emergencyContactPhone ? formatPhoneInternational(data.emergencyContactPhone) : '');
 
         const anyData =
-          !!(data.firstName && data.firstName.trim()) ||
-          !!(data.lastName && data.lastName.trim()) ||
           isSex(data.sex) ||
           isBloodType(data.bloodType) ||
           (Array.isArray(data.allergies) && data.allergies.length > 0) ||
@@ -133,7 +112,7 @@ export default function ProfilePage() {
         setHasData(anyData);
         setIsEditing(!anyData);
       } catch (e: unknown) {
-        setErr(e instanceof Error ? e.message : 'Falha ao carregar perfil.');
+        setErr(e instanceof Error ? e.message : 'Failed to load medical profile.');
       } finally {
         if (mounted) setLoading(false);
       }
@@ -170,11 +149,7 @@ export default function ProfilePage() {
     setOkMsg(null);
 
     try {
-      const phoneDigits = onlyDigits(emgPhone);
-
       const payload = {
-        first_name: firstName.trim(),
-        last_name: lastName.trim(),
         sex: sex || null,
         blood_type: bloodType || null,
         allergies,
@@ -182,19 +157,19 @@ export default function ProfilePage() {
         diseases,
         surgeries,
         emergency_contact_name: emgName || null,
-        emergency_contact_phone: phoneDigits || null,
+        emergency_contact_phone: emgPhone.trim() || null,
         consent: true,
       } as const;
 
       await apiPut('/me/profile', payload);
 
-      setOkMsg('Cadastro clínico salvo com sucesso.');
+      setOkMsg('Medical profile saved successfully.');
       setHasData(true);
       setIsEditing(false);
 
       setTimeout(() => router.replace('/'), 600);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Falha ao salvar. Tente novamente.');
+      setErr(e instanceof Error ? e.message : 'Failed to save. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -209,7 +184,7 @@ export default function ProfilePage() {
           <Logo className="mb-6 opacity-80" />
 
           <div className="rounded-3xl border border-white/70 bg-white/80 px-6 py-5 shadow-xl backdrop-blur">
-            <p className="text-sm font-semibold text-slate-700">Carregando cadastro clínico...</p>
+            <p className="text-sm font-semibold text-slate-700">Loading medical profile...</p>
 
             <div className="mt-4 h-2 w-48 overflow-hidden rounded-full bg-slate-200">
               <div className="h-full w-1/2 animate-pulse rounded-full bg-[#7CA7FF]" />
@@ -233,11 +208,11 @@ export default function ProfilePage() {
           </p>
 
           <h1 className="mt-1 text-3xl font-black tracking-tight text-slate-950">
-            Cadastro Clínico
+            Medical Profile
           </h1>
 
           <p className="mt-2 text-sm leading-6 text-slate-600">
-            Atualize suas informações essenciais para situações de emergência.
+            Keep your essential medical information updated for emergency situations.
           </p>
         </header>
 
@@ -248,25 +223,25 @@ export default function ProfilePage() {
                 type="button"
                 onClick={() => setIsEditing(true)}
                 className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#7CA7FF] to-[#38BDF8] px-4 py-3 text-sm font-extrabold text-white shadow-lg shadow-blue-300/30 transition hover:brightness-95"
-                title="Editar cadastro clínico"
+                title="Edit medical profile"
               >
                 <span>✏️</span>
-                Editar
+                Edit
               </button>
             ) : (
               <div className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-[#E6EBFF] px-4 py-3 text-sm font-extrabold text-[#5277C8]">
                 <span>📝</span>
-                Editando
+                Editing
               </div>
             )}
 
             <Link
               href="/settings/delete"
               className="flex flex-1 items-center justify-center gap-2 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-extrabold text-red-600 shadow-sm transition hover:bg-red-100"
-              title="Excluir conta"
+              title="Delete account"
             >
               <span>🗑️</span>
-              Excluir
+              Delete
             </Link>
           </div>
         </div>
@@ -286,69 +261,47 @@ export default function ProfilePage() {
         <div className="rounded-[2rem] border border-white/80 bg-white/75 p-5 shadow-xl shadow-slate-300/30 backdrop-blur">
           <div className="mb-5 rounded-3xl bg-[#F7F9FF] p-4">
             <h2 className="mb-4 text-sm font-black uppercase tracking-[0.18em] text-slate-500">
-              Identificação
+              Medical Information
             </h2>
 
             <div className="grid grid-cols-2 gap-3">
-              <InputField label="Nome">
-                <input
-                  className={inputClass}
-                  value={firstName}
-                  onChange={(e) => setFirstName(e.target.value)}
-                  placeholder="Seu nome"
+              <SelectField label="Sex">
+                <select
+                  className={selectClass}
+                  value={sex}
+                  onChange={(e) => setSex(e.target.value as SexOption)}
                   disabled={disabled}
-                />
-              </InputField>
+                >
+                  <option value="">Select</option>
+                  {SEX_OPTIONS.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </SelectField>
 
-              <InputField label="Sobrenome">
-                <input
-                  className={inputClass}
-                  value={lastName}
-                  onChange={(e) => setLastName(e.target.value)}
-                  placeholder="Seu sobrenome"
+              <SelectField label="Blood Type">
+                <select
+                  className={selectClass}
+                  value={bloodType}
+                  onChange={(e) => setBloodType(e.target.value as BloodTypeOption)}
                   disabled={disabled}
-                />
-              </InputField>
+                >
+                  <option value="">Select</option>
+                  {BLOOD_TYPES.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </SelectField>
             </div>
           </div>
 
-          <div className="mb-5 grid grid-cols-2 gap-3">
-            <SelectField label="Sexo">
-              <select
-                className={selectClass}
-                value={sex}
-                onChange={(e) => setSex(e.target.value as SexOption)}
-                disabled={disabled}
-              >
-                <option value="">Selecione</option>
-                {SEX_OPTIONS.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-            </SelectField>
-
-            <SelectField label="Tipo sanguíneo">
-              <select
-                className={selectClass}
-                value={bloodType}
-                onChange={(e) => setBloodType(e.target.value as BloodTypeOption)}
-                disabled={disabled}
-              >
-                <option value="">Selecione</option>
-                {BLOOD_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
-            </SelectField>
-          </div>
-
           <FieldWithAdder
-            label="Alergias"
-            placeholder="Ex: poeira, dipirona..."
+            label="Allergies"
+            placeholder="Example: dust, dipyrone..."
             value={allergyInput}
             onChange={setAllergyInput}
             list={allergies}
@@ -362,8 +315,8 @@ export default function ProfilePage() {
           />
 
           <FieldWithAdder
-            label="Medicamentos utilizados"
-            placeholder="Nome do medicamento"
+            label="Current Medications"
+            placeholder="Medication name"
             value={medInput}
             onChange={setMedInput}
             list={medications}
@@ -377,8 +330,8 @@ export default function ProfilePage() {
           />
 
           <FieldWithAdder
-            label="Doenças"
-            placeholder="Nome da doença"
+            label="Medical Conditions"
+            placeholder="Condition name"
             value={diseaseInput}
             onChange={setDiseaseInput}
             list={diseases}
@@ -392,8 +345,8 @@ export default function ProfilePage() {
           />
 
           <FieldWithAdder
-            label="Cirurgias realizadas"
-            placeholder="Nome da cirurgia"
+            label="Previous Surgeries"
+            placeholder="Surgery name"
             value={surgeryInput}
             onChange={setSurgeryInput}
             list={surgeries}
@@ -408,27 +361,27 @@ export default function ProfilePage() {
 
           <div className="mt-6 rounded-3xl bg-[#F7F9FF] p-4">
             <h2 className="mb-4 text-sm font-black uppercase tracking-[0.18em] text-slate-500">
-              Contato de emergência
+              Emergency Contact
             </h2>
 
             <div className="space-y-4">
-              <InputField label="Nome">
+              <InputField label="Name">
                 <input
                   className={inputClass}
                   value={emgName}
                   onChange={(e) => setEmgName(e.target.value)}
-                  placeholder="Nome do contato"
+                  placeholder="Emergency contact name"
                   disabled={disabled}
                 />
               </InputField>
 
-              <InputField label="Celular">
+              <InputField label="Phone Number">
                 <input
                   className={inputClass}
                   value={emgPhone}
-                  onChange={(e) => setEmgPhone(formatPhoneBR(e.target.value))}
+                  onChange={(e) => setEmgPhone(formatPhoneInternational(e.target.value))}
                   inputMode="tel"
-                  placeholder="(DD) 9 9999-9999"
+                  placeholder="+353 83 000 0000"
                   disabled={disabled}
                 />
               </InputField>
@@ -441,7 +394,7 @@ export default function ProfilePage() {
             onClick={handleSave}
             className="mt-6 w-full rounded-2xl bg-gradient-to-r from-[#7CA7FF] to-[#38BDF8] px-4 py-3 text-base font-extrabold text-white shadow-lg shadow-blue-300/30 transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {saving ? 'Salvando…' : 'Salvar cadastro clínico'}
+            {saving ? 'Saving...' : 'Save Medical Profile'}
           </button>
         </div>
       </section>
@@ -526,8 +479,8 @@ function FieldWithAdder(props: {
           onClick={onAdd}
           disabled={!!disabled || !value.trim() || list.length >= maxItems}
           className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-[#CFE2FF] text-xl font-black text-[#5277C8] shadow-sm ring-1 ring-[#A9C4FF] transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
-          aria-label="Adicionar"
-          title="Adicionar"
+          aria-label="Add"
+          title="Add"
         >
           +
         </button>
@@ -546,8 +499,8 @@ function FieldWithAdder(props: {
                 type="button"
                 className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-slate-100 text-xs font-black text-slate-500 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
                 onClick={() => onRemove(i)}
-                title="Remover"
-                aria-label="Remover"
+                title="Remove"
+                aria-label="Remove"
                 disabled={!!disabled}
               >
                 ×

@@ -14,6 +14,8 @@ import type { ProfileResponse } from '@/types/profile.d.ts';
 interface MeResponse {
   id: string;
   email: string;
+  firstName?: string | null;
+  lastName?: string | null;
   role: string | null;
   createdAt: string;
 }
@@ -35,14 +37,14 @@ export default function HomePage() {
   const [publicLink, setPublicLink] = useState<PublicLinkResponse | null>(null);
 
   const fullName = useMemo(() => {
-    const profileName = `${profile?.firstName ?? ''} ${profile?.lastName ?? ''}`.trim();
+    const userName = `${me?.firstName ?? ''} ${me?.lastName ?? ''}`.trim();
 
-    if (profileName) return profileName;
+    if (userName) return userName;
 
     const emailName = me?.email?.split('@')[0];
 
-    return emailName || 'Usuário';
-  }, [profile, me?.email]);
+    return emailName || 'User';
+  }, [me?.firstName, me?.lastName, me?.email]);
 
   async function handleLogout() {
     try {

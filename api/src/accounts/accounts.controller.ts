@@ -42,12 +42,11 @@ function cookieOptsForEnv() {
 
 @Controller('accounts')
 export class AccountsController {
-  constructor(private readonly accounts: AccountsService) {}
+  constructor(private readonly accounts: AccountsService) { }
 
   @Post('register')
   async register(@Body() dto: RegisterDto) {
-    const { email, password } = dto;
-    return this.accounts.register(email, password);
+    return this.accounts.register(dto);
   }
 
   @UseGuards(LocalAuthGuard)

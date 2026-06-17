@@ -7,8 +7,25 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum IdType {
+  PASSPORT
+  VISA
+  DRIVER_LICENSE
+  PPS
+}
+
 model User {
   id                                              String               @id @default(uuid()) @db.Uuid
+  firstName                                       String?
+  lastName                                        String?
+  idType                                          IdType?
+  idNumber                                        String?
+  addressLine1                                    String?
+  addressLine2                                    String?
+  country                                         String?
+  cityCounty                                      String?
+  postalCode                                      String?
+  phoneNumber                                     String?
   email                                           String               @unique
   passwordHash                                    String
   role                                            Role                 @default(USER)
@@ -27,8 +44,6 @@ model User {
 model ClinicalProfile {
   id                    String   @id @default(uuid()) @db.Uuid
   userId                String   @unique @db.Uuid
-  firstName             String
-  lastName              String
   sex                   String?
   emergencyContactName  String?
   emergencyContactPhone String?

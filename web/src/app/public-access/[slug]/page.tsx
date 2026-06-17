@@ -1,26 +1,30 @@
 // web/src/app/public-access/[slug]/page.tsx
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { ApiError, apiPost } from '@/lib/api';
 import { Logo } from '@/components/logo';
 
+interface PublicUserView {
+  firstName?: string | null;
+  lastName?: string | null;
+}
+
 interface ProfilePublicView {
-  firstName?: string;
-  lastName?: string;
-  sex?: string;
-  bloodType?: string;
-  allergies?: string[];
-  medications?: string[];
-  diseases?: string[];
-  surgeries?: string[];
-  emergencyContactName?: string;
-  emergencyContactPhone?: string;
+  sex?: string | null;
+  bloodType?: string | null;
+  allergies?: string[] | null;
+  medications?: string[] | null;
+  diseases?: string[] | null;
+  surgeries?: string[] | null;
+  emergencyContactName?: string | null;
+  emergencyContactPhone?: string | null;
 }
 
 interface PublicAccessResponse {
   ok?: boolean;
+  user?: PublicUserView;
   profile?: ProfilePublicView;
   message?: string;
 }
@@ -36,9 +40,14 @@ export default function PublicAccessPage() {
   const [pin, setPin] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [userData, setUserData] = useState<PublicUserView | null>(null);
   const [profileData, setProfileData] = useState<ProfilePublicView | null>(null);
 
   const pinComplete = pin.length === 6;
+
+  const fullName = useMemo(() => {
+    return `${userData?.firstName ?? ''} ${userData?.lastName ?? ''}`.trim() || 'Not informed';
+  }, [userData?.firstName, userData?.lastName]);
 
   useEffect(() => {
     if (!slug || typeof window === 'undefined') return;
@@ -56,39 +65,36 @@ export default function PublicAccessPage() {
 
     setLoading(true);
     setErrorMsg(null);
+    setUserData(null);
     setProfileData(null);
 
     try {
       const res = await apiPost<PublicAccessResponse>(
         '/public/view',
-        {
-          slug,
-          pin,
-        },
-        {
-          withAuth: false,
-        },
+        { slug, pin },
+        { withAuth: false },
       );
 
       if (res?.profile) {
+        setUserData(res.user ?? null);
         setProfileData(res.profile);
         return;
       }
 
-      setErrorMsg(res?.message ?? 'Não foi possível carregar o acesso público.');
+      setErrorMsg(res?.message ?? 'Unable to load emergency access.');
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.status === 404) {
-          setErrorMsg('Este link público não existe ou foi revogado.');
+          setErrorMsg('This public link does not exist or has been revoked.');
         } else if (err.status === 401 || err.status === 403) {
-          setErrorMsg('PIN inválido. Verifique a senha pública e tente novamente.');
+          setErrorMsg('Invalid PIN. Please check the public PIN and try again.');
         } else {
-          setErrorMsg(err.message || `Erro ${err.status}`);
+          setErrorMsg(err.message || `Error ${err.status}`);
         }
       } else if (err instanceof Error) {
         setErrorMsg(err.message);
       } else {
-        setErrorMsg('Erro desconhecido ao carregar o acesso público.');
+        setErrorMsg('Unknown error while loading emergency access.');
       }
     } finally {
       setLoading(false);
@@ -106,11 +112,11 @@ export default function PublicAccessPage() {
           </p>
 
           <h1 className="mt-1 text-3xl font-black tracking-tight text-slate-950">
-            Acesso público
+            Emergency Access
           </h1>
 
           <p className="mt-2 text-sm leading-6 text-slate-600">
-            Área protegida por PIN para consulta emergencial das informações clínicas.
+            Protected area for emergency access to essential medical information.
           </p>
         </header>
 
@@ -120,16 +126,16 @@ export default function PublicAccessPage() {
             className="rounded-[2rem] border border-white/80 bg-white/75 p-5 shadow-xl shadow-slate-300/30 backdrop-blur"
           >
             <div className="rounded-[1.75rem] bg-gradient-to-br from-[#7CA7FF] to-[#A9C4FF] p-5 text-white shadow-lg">
-              <p className="text-sm text-white/85">Validação necessária</p>
-              <h2 className="mt-1 text-2xl font-black">Digite o PIN</h2>
+              <p className="text-sm text-white/85">Verification required</p>
+              <h2 className="mt-1 text-2xl font-black">Enter PIN</h2>
               <p className="mt-2 text-sm leading-5 text-white/80">
-                Informe a senha pública de 6 dígitos para visualizar os dados permitidos.
+                Enter the 6-digit public PIN to view the allowed emergency data.
               </p>
             </div>
 
             <div className="mt-6">
               <label className="mb-1.5 block text-sm font-bold text-slate-700">
-                Senha pública
+                Public PIN
               </label>
 
               <input
@@ -167,39 +173,39 @@ export default function PublicAccessPage() {
               disabled={!pinComplete || loading}
               className="mt-6 w-full rounded-2xl bg-gradient-to-r from-[#7CA7FF] to-[#38BDF8] px-4 py-3 text-base font-extrabold text-white shadow-lg shadow-blue-300/30 transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {loading ? 'Validando…' : 'Acessar informações'}
+              {loading ? 'Verifying...' : 'Access information'}
             </button>
           </form>
         ) : (
           <div className="rounded-[2rem] border border-white/80 bg-white/75 p-5 shadow-xl shadow-slate-300/30 backdrop-blur">
             <div className="rounded-[1.75rem] bg-gradient-to-br from-emerald-500 to-[#38BDF8] p-5 text-white shadow-lg">
-              <p className="text-sm text-white/85">Acesso autorizado</p>
-              <h2 className="mt-1 text-2xl font-black">Perfil clínico</h2>
+              <p className="text-sm text-white/85">Access authorized</p>
+              <h2 className="mt-1 text-2xl font-black">Emergency Medical Card</h2>
               <p className="mt-2 text-sm leading-5 text-white/80">
-                Informações disponíveis para atendimento de emergência.
+                Information available for emergency assistance.
               </p>
             </div>
 
             <div className="mt-5 space-y-4">
               <InfoCard
-                title="Identificação"
+                title="Patient"
                 items={[
-                  ['Nome', `${profileData.firstName ?? ''} ${profileData.lastName ?? ''}`.trim() || 'Não informado'],
-                  ['Sexo', profileData.sex || 'Não informado'],
-                  ['Tipo sanguíneo', profileData.bloodType || 'Não informado'],
+                  ['Name', fullName],
+                  ['Sex', profileData.sex || 'Not informed'],
+                  ['Blood Type', profileData.bloodType || 'Not informed'],
                 ]}
               />
 
-              <ListCard title="Alergias" items={profileData.allergies} />
-              <ListCard title="Medicamentos utilizados" items={profileData.medications} />
-              <ListCard title="Doenças" items={profileData.diseases} />
-              <ListCard title="Cirurgias realizadas" items={profileData.surgeries} />
+              <ListCard title="Allergies" items={profileData.allergies} />
+              <ListCard title="Current Medications" items={profileData.medications} />
+              <ListCard title="Medical Conditions" items={profileData.diseases} />
+              <ListCard title="Previous Surgeries" items={profileData.surgeries} />
 
               <InfoCard
-                title="Contato de emergência"
+                title="Emergency Contact"
                 items={[
-                  ['Nome', profileData.emergencyContactName || 'Não informado'],
-                  ['Celular', profileData.emergencyContactPhone || 'Não informado'],
+                  ['Name', profileData.emergencyContactName || 'Not informed'],
+                  ['Phone Number', profileData.emergencyContactPhone || 'Not informed'],
                 ]}
               />
             </div>
@@ -231,7 +237,10 @@ function InfoCard({ title, items }: { title: string; items: [string, string][] }
 
       <div className="space-y-2">
         {items.map(([label, value]) => (
-          <div key={label} className="rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-100">
+          <div
+            key={label}
+            className="rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-100"
+          >
             <p className="text-xs font-semibold text-slate-400">{label}</p>
             <p className="mt-1 text-sm font-bold text-slate-800">{value}</p>
           </div>
@@ -261,7 +270,7 @@ function ListCard({ title, items }: { title: string; items?: string[] | null }) 
         </div>
       ) : (
         <p className="rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-500 shadow-sm ring-1 ring-slate-100">
-          Não informado
+          Not informed
         </p>
       )}
     </section>

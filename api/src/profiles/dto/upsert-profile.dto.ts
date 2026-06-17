@@ -9,17 +9,6 @@ import {
 } from 'class-validator';
 
 export class UpsertProfileDto {
-  // Identidade (opcional; quando vier, deve ser string com limites)
-  @IsOptional()
-  @IsString()
-  @MaxLength(80)
-  first_name?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(120)
-  last_name?: string;
-
   // Clínicos
   @IsOptional()
   @IsIn(['M', 'F', 'O'])

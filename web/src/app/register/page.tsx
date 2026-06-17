@@ -5,61 +5,44 @@ import { Logo } from '@/components/logo';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { apiPost } from '@/lib/api';
+import { useTranslations } from 'next-intl';
+
+type IdType = 'PASSPORT' | 'VISA' | 'DRIVER_LICENSE' | 'PPS';
 
 type RegisterResponse = {
   id: string;
   email: string;
+  firstName: string;
+  lastName: string;
   createdAt: string;
 };
 
-function onlyDigits(s: string) {
-  return s.replace(/\D/g, '');
-}
+const ID_TYPES: { value: IdType; label: string }[] = [
+  { value: 'PASSPORT', label: 'Passport' },
+  { value: 'VISA', label: 'Visa' },
+  { value: 'DRIVER_LICENSE', label: 'Driver Licence' },
+  { value: 'PPS', label: 'PPS Number' },
+];
 
-function maskCPF(v: string) {
-  const d = onlyDigits(v).slice(0, 11);
-  return d
-    .replace(/^(\d{3})(\d)/, '$1.$2')
-    .replace(/^(\d{3})\.(\d{3})(\d)/, '$1.$2.$3')
-    .replace(/\.(\d{3})(\d)/, '.$1-$2');
-}
-
-function maskCEP(v: string) {
-  const d = onlyDigits(v).slice(0, 8);
-  return d.length > 5 ? `${d.slice(0, 5)}-${d.slice(5)}` : d;
-}
-
-function maskPhoneBR(v: string) {
-  const d = onlyDigits(v).slice(0, 11);
-  const dd = d.slice(0, 2);
-  const nine = d.slice(2, 3);
-  const p1 = d.slice(3, 7);
-  const p2 = d.slice(7, 11);
-
-  if (d.length <= 2) return `(${dd}`;
-  if (d.length === 3) return `(${dd}) ${nine}`;
-  if (d.length <= 7) return `(${dd}) ${nine} ${p1}`;
-  return `(${dd}) ${nine} ${p1}-${p2}`;
-}
+const COUNTRIES = ['Ireland', 'Brazil', 'Spain', 'Portugal', 'United Kingdom', 'United States', 'France', 'Germany', 'Italy', 'Other'];
 
 export default function RegisterPage() {
+  const t = useTranslations('register');
   const router = useRouter();
 
-  const [fullName, setFullName] = useState('');
-  const [cpf, setCpf] = useState('');
-  const [cep, setCep] = useState('');
-  const [address, setAddress] = useState('');
-  const [number, setNumber] = useState('');
-  const [complement, setComplement] = useState('');
-  const [neighborhood, setNeighborhood] = useState('');
-  const [city, setCity] = useState('');
-  const [stateUf, setStateUf] = useState('');
-  const [cellphone, setCellphone] = useState('');
-
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [idType, setIdType] = useState<IdType>('PASSPORT');
+  const [idNumber, setIdNumber] = useState('');
+  const [addressLine1, setAddressLine1] = useState('');
+  const [addressLine2, setAddressLine2] = useState('');
+  const [country, setCountry] = useState('Ireland');
+  const [cityCounty, setCityCounty] = useState('');
+  const [postalCode, setPostalCode] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
-
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -82,31 +65,6 @@ export default function RegisterPage() {
     };
   }, [password, confirm]);
 
-  async function fetchCEP() {
-    const digits = onlyDigits(cep);
-    if (digits.length !== 8) return;
-
-    try {
-      const res = await fetch(`https://viacep.com.br/ws/${digits}/json/`);
-      const data = (await res.json()) as {
-        erro?: boolean;
-        logradouro?: string;
-        bairro?: string;
-        localidade?: string;
-        uf?: string;
-      };
-
-      if (!data?.erro) {
-        if (data.logradouro) setAddress(data.logradouro);
-        if (data.bairro) setNeighborhood(data.bairro);
-        if (data.localidade) setCity(data.localidade);
-        if (data.uf) setStateUf(data.uf);
-      }
-    } catch {
-      // busca de CEP é opcional
-    }
-  }
-
   const completedRules = [
     rules.len,
     rules.upper,
@@ -115,29 +73,54 @@ export default function RegisterPage() {
     rules.special,
   ].filter(Boolean).length;
 
-  const canSubmit = !loading && email.trim().length > 3 && rules.all;
+  const canSubmit =
+    !loading &&
+    firstName.trim().length > 1 &&
+    lastName.trim().length > 1 &&
+    idNumber.trim().length > 2 &&
+    addressLine1.trim().length > 2 &&
+    country.trim().length > 1 &&
+    cityCounty.trim().length > 1 &&
+    postalCode.trim().length > 1 &&
+    phoneNumber.trim().length > 5 &&
+    email.trim().length > 3 &&
+    rules.all;
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setErr(null);
 
-    if (!rules.all) return;
+    if (!canSubmit) return;
 
     try {
       setLoading(true);
 
-      const res = await apiPost<RegisterResponse>('/accounts/register', {
-        email: email.trim(),
-        password,
-      });
+      const res = await apiPost<RegisterResponse>(
+        '/accounts/register',
+        {
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          idType,
+          idNumber: idNumber.trim(),
+          addressLine1: addressLine1.trim(),
+          addressLine2: addressLine2.trim() || undefined,
+          country: country.trim(),
+          cityCounty: cityCounty.trim(),
+          postalCode: postalCode.trim(),
+          phoneNumber: phoneNumber.trim(),
+          email: email.trim(),
+          password,
+        },
+        { withAuth: false },
+      );
 
       if (!res) {
-        throw new Error('Falha ao cadastrar.');
+        throw new Error(t('errors.failed'));
       }
 
-      router.replace('/profile');
+      router.replace('/login');
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Falha ao cadastrar.';
+      const msg = e instanceof Error ? e.message : t('errors.failed');
       setErr(msg);
     } finally {
       setLoading(false);
@@ -156,207 +139,220 @@ export default function RegisterPage() {
           </div>
 
           <h1 className="text-center text-2xl font-black tracking-tight text-slate-950">
-            Cadastro de Usuário
+            {t('title')}
           </h1>
 
           <p className="mx-auto mt-2 max-w-xs text-center text-sm leading-6 text-slate-600">
-            Crie sua conta para configurar seu perfil clínico e gerar seu QR Code de emergência.
+            {t('subtitle')}
           </p>
 
-          <form onSubmit={onSubmit} className="mt-7 space-y-4">
-            <Field label="Nome completo">
-              <input
-                className={inputClass}
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                placeholder="Seu nome completo"
-              />
-            </Field>
+          <form onSubmit={onSubmit} className="mt-7 space-y-5">
+            <FormSection title={t('sections.personal')}>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label={t('firstName')}>
+                  <input
+                    className={inputClass}
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    placeholder="Rafael"
+                    required
+                  />
+                </Field>
 
-            <Field label="CPF">
-              <input
-                className={inputClass}
-                value={cpf}
-                onChange={(e) => setCpf(maskCPF(e.target.value))}
-                inputMode="numeric"
-                placeholder="000.000.000-00"
-                maxLength={14}
-              />
-            </Field>
-
-            <Field label="CEP">
-              <div className="flex gap-2">
-                <input
-                  className={inputClass}
-                  value={cep}
-                  onChange={(e) => setCep(maskCEP(e.target.value))}
-                  inputMode="numeric"
-                  placeholder="00000-000"
-                  maxLength={9}
-                />
-                <button
-                  type="button"
-                  onClick={fetchCEP}
-                  className="shrink-0 rounded-2xl bg-[#CFE2FF] px-3 py-3 text-xs font-bold text-slate-800 shadow-sm ring-1 ring-[#A9C4FF]"
-                >
-                  Buscar
-                </button>
+                <Field label={t('lastName')}>
+                  <input
+                    className={inputClass}
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                    placeholder="Hernandez"
+                    required
+                  />
+                </Field>
               </div>
-            </Field>
 
-            <Field label="Logradouro">
-              <input
-                className={inputClass}
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                placeholder="Logradouro"
-              />
-            </Field>
+              <Field label={t('email')}>
+                <input
+                  type="email"
+                  className={inputClass}
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  required
+                  autoComplete="email"
+                />
+              </Field>
+            </FormSection>
 
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Número">
+            <FormSection title={t('sections.identification')}>
+              <Field label={t('idType')}>
+                <select
+                  className={inputClass}
+                  value={idType}
+                  onChange={(e) => setIdType(e.target.value as IdType)}
+                  required
+                >
+                  {ID_TYPES.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+
+              <Field label={t('idNumber')}>
                 <input
                   className={inputClass}
-                  value={number}
-                  onChange={(e) => setNumber(e.target.value)}
-                  placeholder="123"
+                  value={idNumber}
+                  onChange={(e) => setIdNumber(e.target.value)}
+                  placeholder="Document number"
+                  required
+                />
+              </Field>
+            </FormSection>
+
+            <FormSection title={t('sections.contact')}>
+              <Field label={t('addressLine1')}>
+                <input
+                  className={inputClass}
+                  value={addressLine1}
+                  onChange={(e) => setAddressLine1(e.target.value)}
+                  placeholder="Street and number"
+                  required
                 />
               </Field>
 
-              <Field label="Complemento">
+              <Field label={t('addressLine2')}>
                 <input
                   className={inputClass}
-                  value={complement}
-                  onChange={(e) => setComplement(e.target.value)}
-                  placeholder="Apto, bloco..."
-                />
-              </Field>
-            </div>
-
-            <Field label="Bairro">
-              <input
-                className={inputClass}
-                value={neighborhood}
-                onChange={(e) => setNeighborhood(e.target.value)}
-                placeholder="Bairro"
-              />
-            </Field>
-
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Cidade">
-                <input
-                  className={inputClass}
-                  value={city}
-                  onChange={(e) => setCity(e.target.value)}
-                  placeholder="Cidade"
+                  value={addressLine2}
+                  onChange={(e) => setAddressLine2(e.target.value)}
+                  placeholder="Apartment, building, unit..."
                 />
               </Field>
 
-              <Field label="Estado">
+              <Field label={t('country')}>
+                <select
+                  className={inputClass}
+                  value={country}
+                  onChange={(e) => setCountry(e.target.value)}
+                  required
+                >
+                  {COUNTRIES.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+
+              <div className="grid grid-cols-2 gap-3">
+                <Field label={t('cityCounty')}>
+                  <input
+                    className={inputClass}
+                    value={cityCounty}
+                    onChange={(e) => setCityCounty(e.target.value)}
+                    placeholder="Dublin"
+                    required
+                  />
+                </Field>
+
+                <Field label={t('postalCode')}>
+                  <input
+                    className={inputClass}
+                    value={postalCode}
+                    onChange={(e) => setPostalCode(e.target.value.toUpperCase())}
+                    placeholder="D08 KFN8"
+                    required
+                  />
+                </Field>
+              </div>
+
+              <Field label={t('phoneNumber')}>
                 <input
                   className={inputClass}
-                  value={stateUf}
-                  onChange={(e) => setStateUf(e.target.value.toUpperCase().slice(0, 2))}
-                  placeholder="UF"
-                  maxLength={2}
+                  value={phoneNumber}
+                  onChange={(e) => setPhoneNumber(e.target.value)}
+                  inputMode="tel"
+                  placeholder="+353 83 000 0000"
+                  required
                 />
               </Field>
-            </div>
+            </FormSection>
 
-            <Field label="Celular">
-              <input
-                className={inputClass}
-                value={cellphone}
-                onChange={(e) => setCellphone(maskPhoneBR(e.target.value))}
-                inputMode="tel"
-                placeholder="(11) 9 9999-9999"
-              />
-            </Field>
+            <FormSection title={t('sections.security')}>
+              <Field label={t('password')}>
+                <input
+                  type="password"
+                  className={inputClass}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="new-password"
+                  required
+                />
 
-            <Field label="E-mail">
-              <input
-                type="email"
-                className={inputClass}
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="voce@exemplo.com"
-                required
-                autoComplete="email"
-              />
-            </Field>
+                <div className="mt-3 rounded-3xl border border-[#D7E3FF] bg-white p-4 shadow-sm">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
+                      {t('passwordSecurity')}
+                    </p>
 
-            <Field label="Senha">
-              <input
-                type="password"
-                className={inputClass}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete="new-password"
-                required
-              />
+                    <span
+                      className={`rounded-full px-3 py-1 text-[11px] font-bold ${
+                        completedRules === 5
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : completedRules >= 3
+                            ? 'bg-[#E6EBFF] text-[#5277C8]'
+                            : 'bg-slate-100 text-slate-500'
+                      }`}
+                    >
+                      {completedRules}/5
+                    </span>
+                  </div>
 
-              <div className="mt-3 rounded-3xl border border-[#D7E3FF] bg-white p-4 shadow-sm">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
-                    Segurança da senha
-                  </p>
+                  <div className="mb-4 h-2 overflow-hidden rounded-full bg-slate-200">
+                    <div
+                      className={`h-full rounded-full transition-all duration-300 ${
+                        completedRules === 5
+                          ? 'bg-emerald-500'
+                          : 'bg-gradient-to-r from-[#7CA7FF] to-[#38BDF8]'
+                      }`}
+                      style={{ width: `${completedRules * 20}%` }}
+                    />
+                  </div>
 
-                  <span
-                    className={`rounded-full px-3 py-1 text-[11px] font-bold ${
-                      completedRules === 5
-                        ? 'bg-emerald-100 text-emerald-700'
-                        : completedRules >= 3
-                          ? 'bg-[#E6EBFF] text-[#5277C8]'
-                          : 'bg-slate-100 text-slate-500'
+                  <div className="grid gap-2">
+                    <PasswordRule ok={rules.len} text={t('rules.minLength')} />
+                    <PasswordRule ok={rules.upper} text={t('rules.uppercase')} />
+                    <PasswordRule ok={rules.lower} text={t('rules.lowercase')} />
+                    <PasswordRule ok={rules.digit} text={t('rules.number')} />
+                    <PasswordRule ok={rules.special} text={t('rules.special')} />
+                  </div>
+                </div>
+              </Field>
+
+              <Field label={t('confirmPassword')}>
+                <input
+                  type="password"
+                  className={inputClass}
+                  value={confirm}
+                  onChange={(e) => setConfirm(e.target.value)}
+                  autoComplete="new-password"
+                  required
+                />
+
+                {confirm.length > 0 && (
+                  <p
+                    className={`mt-2 rounded-2xl px-3 py-2 text-xs font-semibold ${
+                      rules.match
+                        ? 'bg-emerald-50 text-emerald-700'
+                        : 'bg-slate-100 text-slate-600'
                     }`}
                   >
-                    {completedRules}/5
-                  </span>
-                </div>
-
-                <div className="mb-4 h-2 overflow-hidden rounded-full bg-slate-200">
-                  <div
-                    className={`h-full rounded-full transition-all duration-300 ${
-                      completedRules === 5
-                        ? 'bg-emerald-500'
-                        : 'bg-gradient-to-r from-[#7CA7FF] to-[#38BDF8]'
-                    }`}
-                    style={{ width: `${completedRules * 20}%` }}
-                  />
-                </div>
-
-                <div className="grid gap-2">
-                  <PasswordRule ok={rules.len} text="Mínimo de 8 caracteres" />
-                  <PasswordRule ok={rules.upper} text="1 letra maiúscula" />
-                  <PasswordRule ok={rules.lower} text="1 letra minúscula" />
-                  <PasswordRule ok={rules.digit} text="1 número" />
-                  <PasswordRule ok={rules.special} text="1 símbolo especial" />
-                </div>
-              </div>
-            </Field>
-
-            <Field label="Confirmar senha">
-              <input
-                type="password"
-                className={inputClass}
-                value={confirm}
-                onChange={(e) => setConfirm(e.target.value)}
-                autoComplete="new-password"
-                required
-              />
-
-              {confirm.length > 0 && (
-                <p
-                  className={`mt-2 rounded-2xl px-3 py-2 text-xs font-semibold ${
-                    rules.match
-                      ? 'bg-emerald-50 text-emerald-700'
-                      : 'bg-slate-100 text-slate-600'
-                  }`}
-                >
-                  {rules.match ? '✓ Senhas coincidem' : '• Deve ser igual à senha acima'}
-                </p>
-              )}
-            </Field>
+                    {rules.match ? t('passwordsMatch') : t('passwordsDoNotMatch')}
+                  </p>
+                )}
+              </Field>
+            </FormSection>
 
             {err && (
               <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -369,13 +365,13 @@ export default function RegisterPage() {
               disabled={!canSubmit}
               className="mt-2 w-full rounded-2xl bg-gradient-to-r from-[#7CA7FF] to-[#38BDF8] px-4 py-3 text-base font-extrabold text-white shadow-lg shadow-blue-300/30 transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {loading ? 'Finalizando…' : 'Finalizar'}
+              {loading ? t('creating') : t('createAccount')}
             </button>
 
             <p className="pt-2 text-center text-xs text-slate-600">
-              Já tem conta?{' '}
+              {t('alreadyHaveAccount')}{' '}
               <Link href="/login" className="font-bold text-[#0A84D8] underline">
-                Entrar
+                {t('signIn')}
               </Link>
             </p>
           </form>
@@ -387,6 +383,18 @@ export default function RegisterPage() {
 
 const inputClass =
   'mt-1 w-full rounded-2xl border border-[#A9C4FF]/40 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-[#7CA7FF] focus:ring-4 focus:ring-[#7CA7FF]/15';
+
+function FormSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="rounded-3xl bg-[#F7F9FF] p-4">
+      <h2 className="mb-4 text-xs font-black uppercase tracking-[0.18em] text-slate-500">
+        {title}
+      </h2>
+
+      <div className="space-y-4">{children}</div>
+    </section>
+  );
+}
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -410,7 +418,7 @@ function PasswordRule({ ok, text }: { ok: boolean; text: string }) {
         }`}
       >
         {ok ? '✓' : '•'}
-      </span>te
+      </span>
 
       <span className="font-semibold">{text}</span>
     </div>
