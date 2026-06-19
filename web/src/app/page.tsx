@@ -1,11 +1,11 @@
 // web/src/app/page.tsx
-
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
+import { useTranslations } from 'next-intl';
 import { ApiError, apiGet, apiPost } from '@/lib/api';
 import { Logo } from '@/components/logo';
 import BottomNav from '@/components/BottomNav';
@@ -28,6 +28,9 @@ interface PublicLinkResponse {
 }
 
 export default function HomePage() {
+  const t = useTranslations('dashboard');
+  const common = useTranslations('common');
+
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -48,15 +51,9 @@ export default function HomePage() {
 
   async function handleLogout() {
     try {
-      await apiPost(
-        '/accounts/logout',
-        {},
-        {
-          withAuth: true,
-        }
-      );
+      await apiPost('/accounts/logout', {}, { withAuth: true });
     } catch {
-      // ignora erro
+      // Ignore logout API errors and clear local session anyway.
     } finally {
       localStorage.removeItem('token');
       localStorage.removeItem('logged_in');
@@ -95,12 +92,12 @@ export default function HomePage() {
             if (err.status === 404) {
               setPublicLink(null);
             } else if (err.status !== 401) {
-              console.error(`Erro da API (${err.status}) em /me/public-link:`, err.message);
-              setError(`Erro ao carregar link público: ${err.message}`);
+              console.error(`API error (${err.status}) on /me/public-link:`, err.message);
+              setError(`${t('publicAccess')}: ${err.message}`);
             }
           } else {
-            console.error('Erro desconhecido ao carregar /me/public-link:', err);
-            setError('Erro de rede ou desconhecido ao carregar link público.');
+            console.error('Unknown error loading /me/public-link:', err);
+            setError(t('unableToLoad'));
           }
         }
       } catch (err) {
@@ -108,12 +105,12 @@ export default function HomePage() {
 
         if (err instanceof ApiError) {
           if (err.status !== 401) {
-            console.error(`Erro da API (${err.status}):`, err.message);
-            setError(`Erro ao carregar dados: ${err.message}`);
+            console.error(`API error (${err.status}):`, err.message);
+            setError(err.message);
           }
         } else {
-          console.error('Erro desconhecido ou de rede ao carregar dados:', err);
-          setError('Erro de rede ou desconhecido. Verifique sua conexão.');
+          console.error('Unknown or network error loading dashboard data:', err);
+          setError(t('unableToLoad'));
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -125,21 +122,25 @@ export default function HomePage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [t]);
 
   if (loading) {
     return (
       <main className="relative min-h-dvh overflow-hidden bg-[#E6EBFF] px-5 py-8 pb-24">
         <BackgroundDecor />
+
         <section className="relative z-10 mx-auto flex min-h-[70dvh] max-w-md flex-col items-center justify-center text-center">
           <Logo className="mb-6 opacity-80" />
+
           <div className="rounded-3xl border border-white/70 bg-white/75 px-6 py-5 shadow-xl backdrop-blur">
-            <p className="text-sm font-medium text-slate-700">Carregando seu painel...</p>
+            <p className="text-sm font-medium text-slate-700">{t('loadingPanel')}</p>
+
             <div className="mt-4 h-2 w-48 overflow-hidden rounded-full bg-slate-200">
               <div className="h-full w-1/2 animate-pulse rounded-full bg-[#7CA7FF]" />
             </div>
           </div>
         </section>
+
         <BottomNav />
       </main>
     );
@@ -149,22 +150,28 @@ export default function HomePage() {
     return (
       <main className="relative min-h-dvh overflow-hidden bg-[#E6EBFF] px-5 py-8 pb-24">
         <BackgroundDecor />
+
         <section className="relative z-10 mx-auto max-w-md">
           <Logo className="mx-auto mb-6 opacity-80" />
+
           <div className="rounded-3xl border border-red-100 bg-white/90 p-6 text-center shadow-xl backdrop-blur">
             <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-red-50 text-xl">
               !
             </div>
-            <h1 className="text-lg font-bold text-slate-900">Não foi possível carregar</h1>
+
+            <h1 className="text-lg font-bold text-slate-900">{t('unableToLoad')}</h1>
+
             <p className="mt-2 text-sm leading-6 text-red-600">{error}</p>
+
             <Link
               href="/login"
               className="mt-5 inline-flex rounded-2xl bg-[#7CA7FF] px-5 py-3 text-sm font-semibold text-white shadow-md"
             >
-              Voltar para login
+              {t('backToLogin')}
             </Link>
           </div>
         </section>
+
         <BottomNav />
       </main>
     );
@@ -182,26 +189,34 @@ export default function HomePage() {
             </p>
 
             <h1 className="mt-1 text-2xl font-black tracking-tight text-slate-950">
-              Dashboard
+              {t('title')}
             </h1>
           </div>
 
           <button
+            type="button"
             onClick={handleLogout}
             className="rounded-full bg-white/70 px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm backdrop-blur transition hover:bg-white hover:text-slate-900"
           >
-            Sair
+            {common('logout')}
           </button>
         </header>
 
         <div className="mb-5 rounded-[2rem] bg-gradient-to-br from-[#7CA7FF] to-[#A9C4FF] p-5 text-white shadow-xl">
-          <p className="text-sm text-white/85">Bem-vindo(a)</p>
+          <p className="text-sm text-white/85">{t('welcome')}</p>
           <h2 className="mt-1 text-xl font-bold leading-tight">{fullName}</h2>
           <p className="mt-1 break-all text-xs text-white/75">{me?.email}</p>
 
           <div className="mt-5 grid grid-cols-2 gap-3">
-            <InfoPill label="Perfil" value={profile ? 'Criado' : 'Pendente'} />
-            <InfoPill label="QR público" value={publicLink?.isActive ? 'Ativo' : 'Pendente'} />
+            <InfoPill
+              label={t('profile')}
+              value={profile ? common('created') : common('pending')}
+            />
+
+            <InfoPill
+              label={t('publicQr')}
+              value={publicLink?.isActive ? common('active') : common('pending')}
+            />
           </div>
         </div>
 
@@ -210,10 +225,12 @@ export default function HomePage() {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                  Conta
+                  {t('account')}
                 </p>
-                <h3 className="mt-1 text-lg font-bold text-slate-950">Dados do usuário</h3>
+
+                <h3 className="mt-1 text-lg font-bold text-slate-950">{t('userData')}</h3>
               </div>
+
               <span className="rounded-full bg-[#E6EBFF] px-3 py-1 text-xs font-semibold text-[#5277C8]">
                 {me?.role || 'USER'}
               </span>
@@ -221,11 +238,16 @@ export default function HomePage() {
 
             <div className="mt-4 space-y-2 text-sm text-slate-600">
               <p className="break-all">
-                <span className="font-semibold text-slate-800">ID:</span> {me?.id}
+                <span className="font-semibold text-slate-800">{t('id')}:</span> {me?.id}
               </p>
+
               <p>
-                <span className="font-semibold text-slate-800">Membro desde:</span>{' '}
-                {me?.createdAt ? new Date(me.createdAt).toLocaleDateString() : 'Não informado'}
+                <span className="font-semibold text-slate-800">
+                  {common('memberSince')}:
+                </span>{' '}
+                {me?.createdAt
+                  ? new Date(me.createdAt).toLocaleDateString()
+                  : common('notInformed')}
               </p>
             </div>
           </Card>
@@ -234,21 +256,26 @@ export default function HomePage() {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                  Perfil clínico
+                  {t('medicalProfile')}
                 </p>
+
                 <h3 className="mt-1 text-lg font-bold text-slate-950">{fullName}</h3>
               </div>
+
               <Link
                 href="/profile"
                 className="rounded-full bg-slate-950 px-3 py-1 text-xs font-semibold text-white"
               >
-                Editar
+                {common('edit')}
               </Link>
             </div>
 
             <div className="mt-4 grid grid-cols-2 gap-3">
-              <MiniInfo label="Sexo" value={profile?.sex || 'Não informado'} />
-              <MiniInfo label="Sangue" value={profile?.bloodType || 'Não informado'} />
+              <MiniInfo label={t('sex')} value={profile?.sex || common('notInformed')} />
+              <MiniInfo
+                label={t('bloodType')}
+                value={profile?.bloodType || common('notInformed')}
+              />
             </div>
           </Card>
 
@@ -256,24 +283,29 @@ export default function HomePage() {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                  Emergência
+                  {t('emergency')}
                 </p>
-                <h3 className="mt-1 text-lg font-bold text-slate-950">Acesso público</h3>
+
+                <h3 className="mt-1 text-lg font-bold text-slate-950">
+                  {t('publicAccess')}
+                </h3>
               </div>
+
               <span
-                className={`rounded-full px-3 py-1 text-xs font-semibold ${publicLink?.isActive
-                  ? 'bg-emerald-50 text-emerald-700'
-                  : 'bg-amber-50 text-amber-700'
-                  }`}
+                className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                  publicLink?.isActive
+                    ? 'bg-emerald-50 text-emerald-700'
+                    : 'bg-amber-50 text-amber-700'
+                }`}
               >
-                {publicLink?.isActive ? 'Ativo' : 'Não configurado'}
+                {publicLink?.isActive ? common('active') : common('notConfigured')}
               </span>
             </div>
 
             {publicLink ? (
               <div className="mt-4">
                 <p className="text-sm text-slate-600">
-                  Slug:{' '}
+                  {t('slug')}:{' '}
                   <span className="rounded-lg bg-slate-100 px-2 py-1 font-mono text-slate-900">
                     {publicLink.slug}
                   </span>
@@ -283,7 +315,7 @@ export default function HomePage() {
                   <div className="mt-4 inline-flex rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-100">
                     <Image
                       src={publicLink.qrCodeUrl}
-                      alt="QR Code do Link Público"
+                      alt="Public Link QR Code"
                       width={128}
                       height={128}
                       className="h-32 w-32 rounded-xl"
@@ -295,19 +327,18 @@ export default function HomePage() {
                   href="/qr"
                   className="mt-5 flex w-full items-center justify-center rounded-2xl bg-[#7CA7FF] px-4 py-3 text-sm font-bold text-white shadow-md transition hover:brightness-95"
                 >
-                  Gerenciar link público
+                  {t('managePublicLink')}
                 </Link>
               </div>
             ) : (
               <div className="mt-4 rounded-2xl bg-[#F7F9FF] p-4 text-center">
-                <p className="text-sm text-slate-600">
-                  Você ainda não configurou seu QR Code de emergência.
-                </p>
+                <p className="text-sm text-slate-600">{t('noQrConfigured')}</p>
+
                 <Link
                   href="/qr"
                   className="mt-4 inline-flex rounded-2xl bg-[#7CA7FF] px-5 py-3 text-sm font-bold text-white shadow-md transition hover:brightness-95"
                 >
-                  Configurar agora
+                  {t('configureNow')}
                 </Link>
               </div>
             )}
@@ -315,7 +346,7 @@ export default function HomePage() {
 
           {!me && !profile && !publicLink && (
             <div className="rounded-3xl bg-white/80 p-6 text-center text-sm text-slate-600 shadow-lg">
-              Nenhum dado disponível.
+              {t('noData')}
             </div>
           )}
         </div>

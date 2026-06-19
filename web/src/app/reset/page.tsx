@@ -1,13 +1,22 @@
 'use client';
 
 import { Suspense } from 'react';
+import { useTranslations } from 'next-intl';
 import ResetForm from './reset-form';
 
-export default function ResetPage() {
-  // Colocar o hook de busca de querystring atrás de <Suspense>
-  // evita o aviso: "useSearchParams() should be wrapped in a suspense boundary".
+function LoadingFallback() {
+  const common = useTranslations('common');
+
   return (
-    <Suspense fallback={<main className="p-6">Carregando…</main>}>
+    <main className="p-6">
+      {common('loading')}
+    </main>
+  );
+}
+
+export default function ResetPage() {
+  return (
+    <Suspense fallback={<LoadingFallback />}>
       <ResetForm />
     </Suspense>
   );

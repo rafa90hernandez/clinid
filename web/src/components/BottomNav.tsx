@@ -1,17 +1,19 @@
 'use client';
 
 import Link from 'next/link';
+import { useTranslations } from 'next-intl';
 import { usePathname } from 'next/navigation';
 
-const tabs = [
-  { href: '/', label: 'Início', icon: '⌂' },
-  { href: '/history', label: 'Histórico', icon: '♡' },
-  { href: '/qr/print', label: 'QR Code', icon: '▣' },
-  { href: '/profile', label: 'Cadastro', icon: '◴' },
-];
-
 export default function BottomNav() {
+  const t = useTranslations('navigation');
   const pathname = usePathname();
+
+  const tabs = [
+    { href: '/', label: t('home'), icon: '⌂' },
+    { href: '/history', label: t('history'), icon: '♡' },
+    { href: '/qr/print', label: t('qrCode'), icon: '▣' },
+    { href: '/profile', label: t('profile'), icon: '◴' },
+  ];
 
   const hide =
     pathname?.startsWith('/p/') ||

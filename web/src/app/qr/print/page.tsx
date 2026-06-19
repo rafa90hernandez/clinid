@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { Logo } from '@/components/logo';
 import Link from 'next/link';
 import QRCode from 'react-qr-code';
@@ -16,15 +17,15 @@ type PublicLink = {
 };
 
 export default function PrintEmergencyCardPage() {
-  // garante que o usuário está logado antes de buscar dados
+  const t = useTranslations('qrPrint');
+  const common = useTranslations('common');
   const { ready } = useRequireAuth();
 
   const [link, setLink] = useState<PublicLink | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // origem do site para montar a URL pública
-  const WEB_ORIGIN = useMemo(() => {
+  const webOrigin = useMemo(() => {
     if (typeof window !== 'undefined') return window.location.origin.replace(/\/$/, '');
     return (process.env.NEXT_PUBLIC_WEB_ORIGIN || 'http://localhost:3000').replace(/\/$/, '');
   }, []);
@@ -35,18 +36,18 @@ export default function PrintEmergencyCardPage() {
     (async () => {
       setLoading(true);
       setErr(null);
+
       try {
-        // apiGet já retorna o JSON tipado (T), sem .data
         const publicLink = await apiGet<PublicLink | null>('/me/public-link');
         setLink(publicLink);
       } catch {
-        setErr('Erro ao carregar link público. Faça login novamente.');
+        setErr(t('loadError'));
         setLink(null);
       } finally {
         setLoading(false);
       }
     })();
-  }, [ready]);
+  }, [ready, t]);
 
   function handlePrint() {
     if (typeof window !== 'undefined') window.print();
@@ -55,8 +56,8 @@ export default function PrintEmergencyCardPage() {
   if (!ready || loading) {
     return (
       <main className="p-6">
-        <h1 className="text-xl font-semibold">Imprimir cartão de emergência</h1>
-        <p className="mt-2 text-sm text-slate-600">Carregando…</p>
+        <h1 className="text-xl font-semibold">{t('title')}</h1>
+        <p className="mt-2 text-sm text-slate-600">{common('loading')}</p>
       </main>
     );
   }
@@ -64,11 +65,12 @@ export default function PrintEmergencyCardPage() {
   if (err) {
     return (
       <main className="p-6">
-        <h1 className="text-xl font-semibold">Imprimir cartão de emergência</h1>
+        <h1 className="text-xl font-semibold">{t('title')}</h1>
         <p className="mt-3 text-sm text-red-600">{err}</p>
+
         <div className="mt-6">
           <Link href="/qr" className="rounded-md border px-4 py-2 text-slate-800">
-            Voltar ao QR
+            {t('backToQr')}
           </Link>
         </div>
       </main>
@@ -78,9 +80,10 @@ export default function PrintEmergencyCardPage() {
   if (!link) {
     return (
       <main className="p-6">
-        <h1 className="text-xl font-semibold">Imprimir cartão de emergência</h1>
+        <h1 className="text-xl font-semibold">{t('title')}</h1>
+
         <p className="mt-3 text-sm">
-          Você ainda não possui link público ativo. Gere em{' '}
+          {t('noPublicLink')}{' '}
           <Link className="underline" href="/qr">
             /qr
           </Link>
@@ -90,37 +93,38 @@ export default function PrintEmergencyCardPage() {
     );
   }
 
-  const publicUrl = `${WEB_ORIGIN}/p/${link.slug}`;
+  const publicUrl = `${webOrigin}/p/${link.slug}`;
 
   return (
     <main className="p-6">
-      {/* Barra superior (oculta na impressão) */}
       <div className="no-print mb-6 flex items-center justify-between">
-        <h1 className="text-xl font-semibold">QR Code de Acesso</h1>
+        <h1 className="text-xl font-semibold">{t('accessQrTitle')}</h1>
+
         <div className="flex gap-3">
           <Link href="/qr" className="rounded-md border px-4 py-2 text-slate-800">
-            Voltar
+            {common('back')}
           </Link>
+
           <button
             type="button"
             onClick={handlePrint}
             className="rounded-md bg-slate-900 px-4 py-2 text-white"
           >
-            Imprimir
+            {t('print')}
           </button>
         </div>
       </div>
 
-      {/* Cartão (pensado para caber bem na impressão) */}
       <section
         className="card mx-auto w-[360px] max-w-full rounded-2xl bg-white p-5 shadow-md print:w-[320px]"
-        aria-label="Cartão de emergência"
+        aria-label={t('cardAriaLabel')}
       >
         <div className="mb-3 flex items-center gap-3">
           <Logo />
+
           <div>
             <p className="text-xs leading-tight text-slate-500">+ClinID</p>
-            <p className="text-[11px] leading-tight text-slate-500">Soluções emergenciais</p>
+            <p className="text-[11px] leading-tight text-slate-500">{t('brandSubtitle')}</p>
           </div>
         </div>
 
@@ -130,18 +134,14 @@ export default function PrintEmergencyCardPage() {
           </div>
 
           <div className="mt-4 w-full text-center">
-            <p className="text-xs text-slate-600">Acesso público (protegido por PIN)</p>
+            <p className="text-xs text-slate-600">{t('publicAccessProtected')}</p>
             <p className="mt-1 break-all text-sm font-medium">{publicUrl}</p>
           </div>
 
-          {/* Por segurança, não exibimos o PIN aqui. */}
-          <p className="mt-3 text-xs text-slate-500">
-            Para visualizar, acesse o link e informe seu PIN cadastrado.
-          </p>
+          <p className="mt-3 text-xs text-slate-500">{t('pinInstruction')}</p>
         </div>
       </section>
 
-      {/* CSS específico de impressão */}
       <style jsx>{`
         @media print {
           .no-print {

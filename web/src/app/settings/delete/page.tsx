@@ -1,11 +1,14 @@
 'use client';
 
 import { useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { apiDelete } from '@/lib/api';
 
 export default function DeleteAccountPage() {
+  const t = useTranslations('deleteAccount');
   const router = useRouter();
+
   const [password, setPassword] = useState('');
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -17,35 +20,28 @@ export default function DeleteAccountPage() {
     setError(null);
 
     if (!password.trim()) {
-      setError('Digite sua senha para confirmar.');
+      setError(t('passwordRequired'));
       return;
     }
 
     try {
       setSubmitting(true);
 
-      // CORREÇÃO AQUI: Passando o body como segundo argumento e o extra como terceiro
       await apiDelete<unknown>(
-        '/accounts', // Primeiro argumento: path
-        { confirmLoginPassword: password }, // Segundo argumento: body (será stringificado automaticamente pelo apiRequest)
+        '/accounts',
+        { confirmLoginPassword: password },
         {
-          // Terceiro argumento: extra (ExtraInit)
-          // O Content-Type será adicionado automaticamente pelo apiRequest,
-          // mas você pode deixá-lo aqui para ser explícito ou para sobrescrever
           headers: {
             'Content-Type': 'application/json',
           },
           withAuth: true,
         },
       );
-      setMsg('Conta excluída com sucesso. Você será redirecionado.');
+
+      setMsg(t('success'));
       setTimeout(() => router.replace('/login'), 1500);
     } catch (err: unknown) {
-      if (err instanceof Error) {
-        setError(err.message || 'Falha ao excluir a conta.');
-      } else {
-        setError('Falha ao excluir a conta.');
-      }
+      setError(err instanceof Error ? err.message || t('error') : t('error'));
     } finally {
       setSubmitting(false);
     }
@@ -53,17 +49,16 @@ export default function DeleteAccountPage() {
 
   return (
     <main className="mx-auto max-w-md p-6">
-      <h1 className="text-xl font-semibold mb-4">Excluir conta</h1>
+      <h1 className="mb-4 text-xl font-semibold">{t('title')}</h1>
 
-      <p className="text-sm text-gray-600 mb-4">
-        Esta ação é irreversível. Confirme sua senha para prosseguir.
-      </p>
+      <p className="mb-4 text-sm text-gray-600">{t('warning')}</p>
 
       <form onSubmit={onSubmit} className="space-y-4">
         <div>
-          <label htmlFor="password" className="block text-sm font-medium mb-1">
-            Senha
+          <label htmlFor="password" className="mb-1 block text-sm font-medium">
+            {t('confirmPassword')}
           </label>
+
           <input
             id="password"
             type="password"
@@ -75,12 +70,13 @@ export default function DeleteAccountPage() {
         </div>
 
         {error && (
-          <div className="rounded bg-red-50 text-red-700 px-3 py-2 text-sm">
+          <div className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">
             {error}
           </div>
         )}
+
         {msg && (
-          <div className="rounded bg-green-50 text-green-700 px-3 py-2 text-sm">
+          <div className="rounded bg-green-50 px-3 py-2 text-sm text-green-700">
             {msg}
           </div>
         )}
@@ -90,7 +86,7 @@ export default function DeleteAccountPage() {
           disabled={submitting}
           className="w-full rounded bg-red-600 py-2 text-white hover:bg-red-700 disabled:opacity-50"
         >
-          {submitting ? 'Excluindo…' : 'Excluir conta'}
+          {submitting ? t('deleting') : t('delete')}
         </button>
       </form>
     </main>

@@ -6,6 +6,7 @@ import { Logo } from '@/components/logo';
 import { useRouter } from 'next/navigation';
 import { apiPost, apiPut } from '@/lib/api';
 import BottomNav from '@/components/BottomNav';
+import { useTranslations } from 'next-intl';
 
 type PublicLink = {
   id: string;
@@ -32,6 +33,8 @@ function isApiError(e: unknown): e is ApiErrorShape {
 
 export default function QrPage() {
   const router = useRouter();
+  const t = useTranslations('qr');
+  const common = useTranslations('common');
 
   const [pin, setPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
@@ -86,7 +89,7 @@ export default function QrPage() {
         sessionStorage.setItem(`public_pin_for_${link.slug}`, pin);
       }
 
-      setOk('QR Code gerado com sucesso.');
+      setOk(t('success'));
       router.replace(`/p/${link.slug}`);
     } catch (e) {
       const msg =
@@ -94,7 +97,7 @@ export default function QrPage() {
           ? e.message
           : e instanceof Error
             ? e.message
-            : 'Falha ao gerar QR Code. Tente novamente.';
+            : t('error');
 
       setErr(msg);
     } finally {
@@ -113,21 +116,21 @@ export default function QrPage() {
           </p>
 
           <h1 className="mt-1 text-3xl font-black tracking-tight text-slate-950">
-            QR Code
+            {t('title')}
           </h1>
 
           <p className="mt-2 text-sm leading-6 text-slate-600">
-            Crie um PIN público e gere seu link de emergência para acesso rápido às informações clínicas.
+            {t('subtitle')}
           </p>
         </header>
 
         <div className="mb-5 rounded-[2rem] bg-gradient-to-br from-[#7CA7FF] to-[#A9C4FF] p-5 text-white shadow-xl">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="text-sm text-white/85">Acesso público</p>
-              <h2 className="mt-1 text-2xl font-black leading-tight">Protegido por PIN</h2>
+              <p className="text-sm text-white/85">{t('publicAccess')}</p>
+              <h2 className="mt-1 text-2xl font-black leading-tight">{t('pinProtected')}</h2>
               <p className="mt-2 text-sm leading-5 text-white/80">
-                O QR Code só libera os dados após a validação da senha pública.
+                {t('pinProtectedDescription')}
               </p>
             </div>
 
@@ -137,8 +140,8 @@ export default function QrPage() {
           </div>
 
           <div className="mt-5 grid grid-cols-2 gap-3">
-            <StatusPill label="PIN" value={pinComplete ? '6 dígitos' : 'Pendente'} active={pinComplete} />
-            <StatusPill label="Consentimento" value={consent ? 'Autorizado' : 'Pendente'} active={consent} />
+            <StatusPill label="PIN" value={pinComplete ? t('pinRules.sixDigits') : common('pending')} active={pinComplete} />
+            <StatusPill label="Consentimento" value={consent ? common('active') : common('pending')} active={consent} />
           </div>
         </div>
 
@@ -147,7 +150,7 @@ export default function QrPage() {
           className="rounded-[2rem] border border-white/80 bg-white/75 p-5 shadow-xl shadow-slate-300/30 backdrop-blur"
         >
           <div className="space-y-5">
-            <InputField label="Senha pública (PIN)">
+            <InputField label={t('pin')}>
               <input
                 type="password"
                 inputMode="numeric"
@@ -156,7 +159,7 @@ export default function QrPage() {
                 value={pin}
                 onChange={(e) => setPin(onlyDigits(e.target.value))}
                 className={inputClass}
-                placeholder="6 dígitos numéricos"
+                placeholder={t('pinRules.sixDigits')}
                 required
               />
 
@@ -164,20 +167,19 @@ export default function QrPage() {
                 {Array.from({ length: 6 }).map((_, index) => (
                   <span
                     key={index}
-                    className={`h-2 rounded-full transition ${
-                      index < pin.length ? 'bg-[#7CA7FF]' : 'bg-slate-200'
-                    }`}
+                    className={`h-2 rounded-full transition ${index < pin.length ? 'bg-[#7CA7FF]' : 'bg-slate-200'
+                      }`}
                   />
                 ))}
               </div>
 
               <div className="mt-3 rounded-2xl bg-[#F7F9FF] p-3 text-xs text-slate-600">
-                <Rule ok={pinComplete}>Senha deve conter 6 dígitos</Rule>
-                <Rule ok={/^\d*$/.test(pin)}>Use apenas números</Rule>
+                <Rule ok={pinComplete}>{t('pinRules.sixDigits')}</Rule>
+                <Rule ok={/^\d*$/.test(pin)}>{t('pinRules.numbersOnly')}</Rule>
               </div>
             </InputField>
 
-            <InputField label="Confirmar senha pública (PIN)">
+            <InputField label={t('confirmPin')}>
               <input
                 type="password"
                 inputMode="numeric"
@@ -186,34 +188,33 @@ export default function QrPage() {
                 value={confirmPin}
                 onChange={(e) => setConfirmPin(onlyDigits(e.target.value))}
                 className={inputClass}
-                placeholder="Repita os 6 dígitos"
+                placeholder={t('confirmPin')}
                 required
               />
 
               {confirmPin.length > 0 && (
                 <p
-                  className={`mt-2 rounded-2xl px-3 py-2 text-xs font-semibold ${
-                    pinsMatch ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
-                  }`}
+                  className={`mt-2 rounded-2xl px-3 py-2 text-xs font-semibold ${pinsMatch ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
+                    }`}
                 >
-                  {pinsMatch ? '✓ PIN confirmado' : '• Os PINs ainda não conferem'}
+                  {pinsMatch ? t('pinConfirmed') : t('pinMismatch')}
                 </p>
               )}
             </InputField>
 
-            <InputField label="Sua senha de login">
+            <InputField label={t('loginPassword')}>
               <input
                 type="password"
                 value={loginPassword}
                 onChange={(e) => setLoginPassword(e.target.value)}
                 className={inputClass}
-                placeholder="Digite sua senha de login"
+                placeholder={t('loginPassword')}
                 minLength={6}
                 required
               />
-
+              Gerando…
               <p className="mt-2 text-xs leading-5 text-slate-500">
-                Usamos sua senha de login para confirmar que é você criando este acesso.
+                {t('loginPasswordDescription')}
               </p>
             </InputField>
 
@@ -227,9 +228,7 @@ export default function QrPage() {
               />
 
               <span>
-                Autorizo a criação do QR Code e do link público para acesso às minhas informações
-                clínicas, exclusivamente para emergências, nos termos da Lei Geral de Proteção de
-                Dados Pessoais – LGPD (Lei nº 13.709/2018).
+                {t('consent')}
               </span>
             </label>
 
@@ -250,12 +249,12 @@ export default function QrPage() {
               disabled={!canSubmit}
               className="w-full rounded-2xl bg-gradient-to-r from-[#7CA7FF] to-[#38BDF8] px-4 py-3 text-base font-extrabold text-white shadow-lg shadow-blue-300/30 transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {loading ? 'Gerando…' : 'Gerar QR Code'}
+              {loading ? t('generating') : t('generate')}
             </button>
 
             {!canSubmit && (
               <p className="text-center text-xs text-slate-500">
-                Preencha o PIN, confirme a senha pública, informe sua senha de login e aceite o consentimento.
+                {t('fillAllFields')}
               </p>
             )}
           </div>

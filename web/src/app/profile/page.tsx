@@ -2,6 +2,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { Logo } from '@/components/logo';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -45,6 +46,8 @@ function isBloodType(v: unknown): v is Exclude<BloodTypeOption, ''> {
 
 export default function ProfilePage() {
   const router = useRouter();
+  const t = useTranslations('profile');
+  const common = useTranslations('common');
   const { ready } = useRequireAuth();
 
   const [loading, setLoading] = useState(true);
@@ -97,7 +100,11 @@ export default function ProfilePage() {
         setSurgeries(Array.isArray(data.surgeries) ? data.surgeries.slice(0, maxItems) : []);
 
         setEmgName(data.emergencyContactName ?? '');
-        setEmgPhone(data.emergencyContactPhone ? formatPhoneInternational(data.emergencyContactPhone) : '');
+        setEmgPhone(
+          data.emergencyContactPhone
+            ? formatPhoneInternational(data.emergencyContactPhone)
+            : '',
+        );
 
         const anyData =
           isSex(data.sex) ||
@@ -112,7 +119,7 @@ export default function ProfilePage() {
         setHasData(anyData);
         setIsEditing(!anyData);
       } catch (e: unknown) {
-        setErr(e instanceof Error ? e.message : 'Failed to load medical profile.');
+        setErr(e instanceof Error ? e.message : t('loadError'));
       } finally {
         if (mounted) setLoading(false);
       }
@@ -121,7 +128,7 @@ export default function ProfilePage() {
     return () => {
       mounted = false;
     };
-  }, [ready]);
+  }, [ready, t]);
 
   const canSave = useMemo(() => !saving && isEditing, [saving, isEditing]);
   const disabled = !isEditing;
@@ -163,13 +170,13 @@ export default function ProfilePage() {
 
       await apiPut('/me/profile', payload);
 
-      setOkMsg('Medical profile saved successfully.');
+      setOkMsg(t('saved'));
       setHasData(true);
       setIsEditing(false);
 
       setTimeout(() => router.replace('/'), 600);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Failed to save. Please try again.');
+      setErr(e instanceof Error ? e.message : t('saveError'));
     } finally {
       setSaving(false);
     }
@@ -184,7 +191,7 @@ export default function ProfilePage() {
           <Logo className="mb-6 opacity-80" />
 
           <div className="rounded-3xl border border-white/70 bg-white/80 px-6 py-5 shadow-xl backdrop-blur">
-            <p className="text-sm font-semibold text-slate-700">Loading medical profile...</p>
+            <p className="text-sm font-semibold text-slate-700">{t('loading')}</p>
 
             <div className="mt-4 h-2 w-48 overflow-hidden rounded-full bg-slate-200">
               <div className="h-full w-1/2 animate-pulse rounded-full bg-[#7CA7FF]" />
@@ -208,12 +215,10 @@ export default function ProfilePage() {
           </p>
 
           <h1 className="mt-1 text-3xl font-black tracking-tight text-slate-950">
-            Medical Profile
+            {t('title')}
           </h1>
 
-          <p className="mt-2 text-sm leading-6 text-slate-600">
-            Keep your essential medical information updated for emergency situations.
-          </p>
+          <p className="mt-2 text-sm leading-6 text-slate-600">{t('subtitle')}</p>
         </header>
 
         <div className="mb-5 rounded-[2rem] border border-white/80 bg-white/75 p-4 shadow-xl shadow-slate-300/30 backdrop-blur">
@@ -223,25 +228,25 @@ export default function ProfilePage() {
                 type="button"
                 onClick={() => setIsEditing(true)}
                 className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#7CA7FF] to-[#38BDF8] px-4 py-3 text-sm font-extrabold text-white shadow-lg shadow-blue-300/30 transition hover:brightness-95"
-                title="Edit medical profile"
+                title={common('edit')}
               >
                 <span>✏️</span>
-                Edit
+                {common('edit')}
               </button>
             ) : (
               <div className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-[#E6EBFF] px-4 py-3 text-sm font-extrabold text-[#5277C8]">
                 <span>📝</span>
-                Editing
+                {t('editing')}
               </div>
             )}
 
             <Link
               href="/settings/delete"
               className="flex flex-1 items-center justify-center gap-2 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-extrabold text-red-600 shadow-sm transition hover:bg-red-100"
-              title="Delete account"
+              title={common('delete')}
             >
               <span>🗑️</span>
-              Delete
+              {common('delete')}
             </Link>
           </div>
         </div>
@@ -261,18 +266,18 @@ export default function ProfilePage() {
         <div className="rounded-[2rem] border border-white/80 bg-white/75 p-5 shadow-xl shadow-slate-300/30 backdrop-blur">
           <div className="mb-5 rounded-3xl bg-[#F7F9FF] p-4">
             <h2 className="mb-4 text-sm font-black uppercase tracking-[0.18em] text-slate-500">
-              Medical Information
+              {t('medicalInformation')}
             </h2>
 
             <div className="grid grid-cols-2 gap-3">
-              <SelectField label="Sex">
+              <SelectField label={t('sex')}>
                 <select
                   className={selectClass}
                   value={sex}
                   onChange={(e) => setSex(e.target.value as SexOption)}
                   disabled={disabled}
                 >
-                  <option value="">Select</option>
+                  <option value="">{t('select')}</option>
                   {SEX_OPTIONS.map((s) => (
                     <option key={s} value={s}>
                       {s}
@@ -281,17 +286,17 @@ export default function ProfilePage() {
                 </select>
               </SelectField>
 
-              <SelectField label="Blood Type">
+              <SelectField label={t('bloodType')}>
                 <select
                   className={selectClass}
                   value={bloodType}
                   onChange={(e) => setBloodType(e.target.value as BloodTypeOption)}
                   disabled={disabled}
                 >
-                  <option value="">Select</option>
-                  {BLOOD_TYPES.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
+                  <option value="">{t('select')}</option>
+                  {BLOOD_TYPES.map((type) => (
+                    <option key={type} value={type}>
+                      {type}
                     </option>
                   ))}
                 </select>
@@ -300,8 +305,8 @@ export default function ProfilePage() {
           </div>
 
           <FieldWithAdder
-            label="Allergies"
-            placeholder="Example: dust, dipyrone..."
+            label={t('allergies')}
+            placeholder={t('allergiesPlaceholder')}
             value={allergyInput}
             onChange={setAllergyInput}
             list={allergies}
@@ -315,8 +320,8 @@ export default function ProfilePage() {
           />
 
           <FieldWithAdder
-            label="Current Medications"
-            placeholder="Medication name"
+            label={t('medications')}
+            placeholder={t('medicationsPlaceholder')}
             value={medInput}
             onChange={setMedInput}
             list={medications}
@@ -330,8 +335,8 @@ export default function ProfilePage() {
           />
 
           <FieldWithAdder
-            label="Medical Conditions"
-            placeholder="Condition name"
+            label={t('diseases')}
+            placeholder={t('diseasesPlaceholder')}
             value={diseaseInput}
             onChange={setDiseaseInput}
             list={diseases}
@@ -345,8 +350,8 @@ export default function ProfilePage() {
           />
 
           <FieldWithAdder
-            label="Previous Surgeries"
-            placeholder="Surgery name"
+            label={t('surgeries')}
+            placeholder={t('surgeriesPlaceholder')}
             value={surgeryInput}
             onChange={setSurgeryInput}
             list={surgeries}
@@ -361,27 +366,27 @@ export default function ProfilePage() {
 
           <div className="mt-6 rounded-3xl bg-[#F7F9FF] p-4">
             <h2 className="mb-4 text-sm font-black uppercase tracking-[0.18em] text-slate-500">
-              Emergency Contact
+              {t('emergencyContact')}
             </h2>
 
             <div className="space-y-4">
-              <InputField label="Name">
+              <InputField label={t('contactName')}>
                 <input
                   className={inputClass}
                   value={emgName}
                   onChange={(e) => setEmgName(e.target.value)}
-                  placeholder="Emergency contact name"
+                  placeholder={t('contactNamePlaceholder')}
                   disabled={disabled}
                 />
               </InputField>
 
-              <InputField label="Phone Number">
+              <InputField label={t('contactPhone')}>
                 <input
                   className={inputClass}
                   value={emgPhone}
                   onChange={(e) => setEmgPhone(formatPhoneInternational(e.target.value))}
                   inputMode="tel"
-                  placeholder="+353 83 000 0000"
+                  placeholder={t('contactPhonePlaceholder')}
                   disabled={disabled}
                 />
               </InputField>
@@ -394,7 +399,7 @@ export default function ProfilePage() {
             onClick={handleSave}
             className="mt-6 w-full rounded-2xl bg-gradient-to-r from-[#7CA7FF] to-[#38BDF8] px-4 py-3 text-base font-extrabold text-white shadow-lg shadow-blue-300/30 transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {saving ? 'Saving...' : 'Save Medical Profile'}
+            {saving ? common('saving') : t('saveMedicalProfile')}
           </button>
         </div>
       </section>

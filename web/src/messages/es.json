@@ -1,0 +1,73 @@
+{
+  "common": {
+    "save": "Save",
+    "edit": "Edit",
+    "delete": "Delete",
+    "signOut": "Sign out",
+    "loading": "Loading..."
+  },
+  "login": {
+    "title": "Welcome",
+    "subtitle": "Access your clinical identification securely.",
+    "email": "Email",
+    "password": "Password",
+    "noAccount": "Don't have an account yet?",
+    "createAccount": "Create an account",
+    "forgotPassword": "Forgot password",
+    "signIn": "Sign in",
+    "signingIn": "Signing in...",
+    "errors": {
+      "invalidCredentials": "Unable to sign in. Please check your credentials."
+    }
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "welcome": "Welcome",
+    "medicalProfile": "Medical Profile",
+    "publicQr": "Public QR",
+    "created": "Created",
+    "pending": "Pending",
+    "active": "Active",
+    "notConfigured": "Not configured"
+  },
+  "register": {
+  "title": "Create Account",
+  "subtitle": "Create your account to set up your medical profile and emergency QR Code.",
+  "sections": {
+    "personal": "Personal Information",
+    "identification": "Identification",
+    "contact": "Contact Information",
+    "security": "Security"
+  },
+  "firstName": "First Name",
+  "lastName": "Last Name",
+  "email": "Email",
+  "idType": "ID Type",
+  "idNumber": "ID Number",
+  "addressLine1": "Address Line 1",
+  "addressLine2": "Address Line 2 (Optional)",
+  "country": "Country",
+  "cityCounty": "City / County",
+  "postalCode": "Eircode / Postal Code",
+  "phoneNumber": "Phone Number",
+  "password": "Password",
+  "confirmPassword": "Confirm Password",
+  "passwordSecurity": "Password Security",
+  "rules": {
+    "minLength": "Minimum 8 characters",
+    "uppercase": "One uppercase letter",
+    "lowercase": "One lowercase letter",
+    "number": "One number",
+    "special": "One special character"
+  },
+  "passwordsMatch": "✓ Passwords match",
+  "passwordsDoNotMatch": "• Must match the password above",
+  "createAccount": "Create Account",
+  "creating": "Creating...",
+  "alreadyHaveAccount": "Already have an account?",
+  "signIn": "Sign In",
+  "errors": {
+    "failed": "Unable to create account."
+  }
+}
+}
