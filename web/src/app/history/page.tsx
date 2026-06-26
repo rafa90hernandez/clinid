@@ -103,9 +103,7 @@ export default function HistoryPage() {
             {t('title')}
           </h1>
 
-          <p className="mt-2 text-sm leading-6 text-slate-600">
-            {t('subtitle')}
-          </p>
+          <p className="mt-2 text-sm leading-6 text-slate-600">{t('subtitle')}</p>
         </header>
 
         {error && (
@@ -152,6 +150,42 @@ export default function HistoryPage() {
                     value={entry.snapshot?.bloodType || common('notInformed')}
                   />
                 </div>
+
+                <div className="mt-4 space-y-3">
+                  <ListInfo
+                    label={t('allergies')}
+                    items={entry.snapshot?.allergies}
+                    empty={common('notInformed')}
+                  />
+
+                  <ListInfo
+                    label={t('medications')}
+                    items={entry.snapshot?.medications}
+                    empty={common('notInformed')}
+                  />
+
+                  <ListInfo
+                    label={t('diseases')}
+                    items={entry.snapshot?.diseases}
+                    empty={common('notInformed')}
+                  />
+
+                  <ListInfo
+                    label={t('surgeries')}
+                    items={entry.snapshot?.surgeries}
+                    empty={common('notInformed')}
+                  />
+
+                  <MiniInfo
+                    label={t('emergencyContactName')}
+                    value={entry.snapshot?.emergencyContactName || common('notInformed')}
+                  />
+
+                  <MiniInfo
+                    label={t('emergencyContactPhone')}
+                    value={entry.snapshot?.emergencyContactPhone || common('notInformed')}
+                  />
+                </div>
               </article>
             ))}
           </div>
@@ -180,6 +214,37 @@ function MiniInfo({ label, value }: { label: string; value: string }) {
     <div className="rounded-2xl bg-[#F7F9FF] p-3">
       <p className="text-xs font-medium text-slate-400">{label}</p>
       <p className="mt-1 text-sm font-bold text-slate-800">{value}</p>
+    </div>
+  );
+}
+
+function ListInfo({
+  label,
+  items,
+  empty,
+}: {
+  label: string;
+  items?: string[] | null;
+  empty: string;
+}) {
+  return (
+    <div className="rounded-2xl bg-[#F7F9FF] p-3">
+      <p className="text-xs font-medium text-slate-400">{label}</p>
+
+      {items && items.length > 0 ? (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {items.map((item, index) => (
+            <span
+              key={`${item}-${index}`}
+              className="rounded-full bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-sm ring-1 ring-slate-100"
+            >
+              {item}
+            </span>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-1 text-sm font-bold text-slate-800">{empty}</p>
+      )}
     </div>
   );
 }

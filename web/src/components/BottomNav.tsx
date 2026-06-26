@@ -11,7 +11,7 @@ export default function BottomNav() {
   const tabs = [
     { href: '/', label: t('home'), icon: '⌂' },
     { href: '/history', label: t('history'), icon: '♡' },
-    { href: '/qr/print', label: t('qrCode'), icon: '▣' },
+    { href: '/qr', label: t('qrCode'), icon: '▣' },
     { href: '/profile', label: t('profile'), icon: '◴' },
   ];
 

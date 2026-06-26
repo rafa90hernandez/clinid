@@ -1,71 +1,69 @@
+// api/src/mail/mail.service.ts
 import { Injectable, Logger } from '@nestjs/common';
-import nodemailer, { type Transporter, type SendMailOptions } from 'nodemailer';
-
-type MailEnv = {
-  host: string;
-  port: number;
-  user: string;
-  pass: string;
-  from: string;
-};
-
-function getMailEnv(): MailEnv {
-  const host = process.env.MAIL_HOST ?? '';
-  const port = Number(process.env.MAIL_PORT ?? '587');
-  const user = process.env.MAIL_USER ?? '';
-  const pass = process.env.MAIL_PASS ?? '';
-  const from = process.env.MAIL_FROM ?? user;
-
-  if (!host || !user || !pass) {
-    throw new Error('MAIL_HOST/MAIL_USER/MAIL_PASS não configurados');
-  }
-  return { host, port, user, pass, from };
-}
+import nodemailer from 'nodemailer';
 
 @Injectable()
 export class MailService {
   private readonly logger = new Logger(MailService.name);
-  private transporter: Transporter | null = null;
 
-  private ensureTransporter(): Transporter {
-    if (this.transporter) return this.transporter;
+  private createTransporter() {
+    const host = process.env.SMTP_HOST;
+    const port = Number(process.env.SMTP_PORT || 587);
+    const user = process.env.SMTP_USER;
+    const pass = process.env.SMTP_PASS;
 
-    const env = getMailEnv();
-    this.transporter = nodemailer.createTransport({
-      host: env.host,
-      port: env.port,
-      secure: env.port === 465,
-      auth: { user: env.user, pass: env.pass },
+    if (!host || !user || !pass) {
+      return null;
+    }
+
+    return nodemailer.createTransport({
+      host,
+      port,
+      secure: port === 465,
+      auth: {
+        user,
+        pass,
+      },
     });
-
-    return this.transporter;
   }
 
-  async send(opts: SendMailOptions): Promise<{ messageId: string }> {
-    const transport = this.ensureTransporter();
-    const env = getMailEnv();
+  async sendPasswordResetEmail(to: string, resetUrl: string) {
+    const transporter = this.createTransporter();
 
-    const finalOpts: SendMailOptions = {
-      from: env.from,
-      ...opts,
-    };
+    if (!transporter) {
+      this.logger.warn(`SMTP not configured. Reset URL: ${resetUrl}`);
+      return;
+    }
 
-    const info = await transport.sendMail(finalOpts); // Promise<SentMessageInfo>
-    const messageId = typeof (info as { messageId?: unknown }).messageId === 'string'
-      ? (info as { messageId: string }).messageId
-      : '';
-    this.logger.log(`Email enviado: ${messageId}`);
-    return { messageId };
-  }
+    const from = process.env.MAIL_FROM || process.env.SMTP_USER;
 
-  async sendResetPassword(to: string, resetUrl: string) {
-    return this.send({
+    await transporter.sendMail({
+      from,
       to,
-      subject: 'Redefinição de senha - ClinID',
+      subject: 'ClinID Password Reset',
+      text: `We received a request to reset your ClinID password.
+
+Open this link to reset your password:
+${resetUrl}
+
+This link expires in 15 minutes.
+
+If you did not request this, you can safely ignore this email.`,
       html: `
-        <p>Você solicitou redefinição de senha.</p>
-        <p>Clique no link abaixo (válido por 15 minutos):</p>
-        <p><a href="${resetUrl}">${resetUrl}</a></p>
+        <div style="font-family: Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 24px; color: #0f172a;">
+          <h1 style="color: #2563eb; margin-bottom: 8px;">ClinID</h1>
+          <h2 style="margin-top: 0;">Password Reset Request</h2>
+          <p>We received a request to reset your ClinID password.</p>
+          <p style="margin: 24px 0;">
+            <a href="${resetUrl}" style="background: #2563eb; color: #ffffff; padding: 12px 18px; border-radius: 10px; text-decoration: none; font-weight: bold;">
+              Reset Password
+            </a>
+          </p>
+          <p>This link expires in <strong>15 minutes</strong>.</p>
+          <p style="color: #64748b; font-size: 14px;">
+            If you did not request this, you can safely ignore this email.
+          </p>
+        </div>
       `,
     });
   }

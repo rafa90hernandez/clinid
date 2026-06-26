@@ -142,7 +142,13 @@
     "emptyDescription": "Your medical profile changes will appear here after you save updates.",
     "profileUpdate": "Medical profile update",
     "sex": "Sex",
-    "bloodType": "Blood Type"
+    "bloodType": "Blood Type",
+    "allergies": "Allergies",
+    "medications": "Current Medications",
+    "diseases": "Medical Conditions",
+    "surgeries": "Previous Surgeries",
+    "emergencyContactName": "Emergency Contact Name",
+    "emergencyContactPhone": "Emergency Contact Phone"
   },
   "qr": {
     "title": "Emergency QR",

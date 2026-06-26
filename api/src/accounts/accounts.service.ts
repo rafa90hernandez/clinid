@@ -10,6 +10,7 @@ import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { MailService } from '../mail/mail.service';
 import { RegisterDto } from './dto/register.dto';
 
 export interface LocalUser {
@@ -39,6 +40,7 @@ export class AccountsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
+    private readonly mail: MailService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -184,7 +186,9 @@ export class AccountsService {
       rec.id,
     )}&token=${encodeURIComponent(rawToken)}`;
 
-    Logger.log(`[DEV] Reset URL: ${resetUrl}`, 'PasswordReset');
+    await this.mail.sendPasswordResetEmail(normalizedEmail, resetUrl);
+
+    Logger.log(`Password reset email requested for ${normalizedEmail}`, 'PasswordReset');
 
     return { ok: true };
   }

@@ -1,3 +1,4 @@
+// api/src/mail/mail.controller.ts
 import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
 import { MailService } from './mail.service';
 
@@ -9,7 +10,7 @@ export class MailController {
   @HttpCode(HttpStatus.OK)
   async sendReset(@Body() body: { to: string; link: string }) {
     const { to, link } = body;
-    await this.mail.sendResetPassword(to, link);
+    await this.mail.sendPasswordResetEmail(to, link);
     return { ok: true };
   }
 }
