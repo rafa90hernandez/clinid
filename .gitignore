@@ -15,16 +15,18 @@ coverage
 .env.*
 !.env.example
 
-# Docker
+# Docker / local files
 .docker
 resp.json
+cookies.txt
+*.cookie
+*.cookies
+
+# Editor
 .vscode/
 
-# Arquivos temporários e de ambiente na raiz do projeto
-api.env
-cookies.txt
+# Temporary folders
 eslint/
 nest/
 prettier/
-tash push -m backup antes de voltar pro último commit # O nome exato
 v0.4.0-sprint4/
