@@ -53,11 +53,8 @@ function buildUrl(path: string, query?: ExtraInit['query']): string {
   return qs ? `${base}${p}?${qs}` : `${base}${p}`;
 }
 
-function getAuthHeader(withAuth?: boolean): Record<string, string> {
-  if (!withAuth) return {};
-  if (typeof window === 'undefined') return {};
-  const token = window.localStorage.getItem(TOKEN_STORAGE_KEY);
-  return token ? { Authorization: `Bearer ${token}` } : {};
+function getAuthHeader(_withAuth?: boolean): Record<string, string> {
+  return {};
 }
 
 function isExtraInit(candidate: unknown): candidate is ExtraInit {

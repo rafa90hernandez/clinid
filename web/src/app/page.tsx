@@ -55,7 +55,6 @@ export default function HomePage() {
     } catch {
       // Ignore logout API errors and clear local session anyway.
     } finally {
-      localStorage.removeItem('token');
       localStorage.removeItem('logged_in');
 
       router.replace('/login');

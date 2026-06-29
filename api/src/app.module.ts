@@ -9,6 +9,8 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { HistoryModule } from './history/history.module';
 
+const isProd = process.env.NODE_ENV === 'production';
+
 @Module({
   imports: [
     PrismaModule,
@@ -18,11 +20,25 @@ import { HistoryModule } from './history/history.module';
     PublicLinksModule,
     PublicViewModule,
     HistoryModule,
+
     ThrottlerModule.forRoot([
-      { name: 'default', ttl: 60_000, limit: 1000 }, // De 60 para 1000 requisições/min
-      { name: 'public', ttl: 60_000, limit: 100 }, // De 10 para 100 requisições/min
+      {
+        name: 'default',
+        ttl: 60_000,
+        limit: isProd ? 300 : 1000,
+      },
+      {
+        name: 'public',
+        ttl: 60_000,
+        limit: 100,
+      },
     ]),
   ],
-  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+  ],
 })
 export class AppModule {}

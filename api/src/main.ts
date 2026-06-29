@@ -16,9 +16,12 @@ async function bootstrap() {
   app.use(helmet());
 
   // CORS (cookies httpOnly exigem credentials: true e origin explícito)
-  const origin = process.env.WEB_BASE_URL || 'http://localhost:3000';
+  const allowedOrigins = (process.env.WEB_BASE_URL || 'http://localhost:3000')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
   app.enableCors({
-    origin,
+    origin: allowedOrigins,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],

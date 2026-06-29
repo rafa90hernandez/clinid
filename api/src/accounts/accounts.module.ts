@@ -1,4 +1,3 @@
-// api/src/accounts/accounts.module.ts
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
@@ -9,13 +8,25 @@ import { MailModule } from '../mail/mail.module';
 import { LocalStrategy } from './strategies/local.strategy';
 import { JwtStrategy } from './strategies/jwt.strategy';
 
+function getJwtSecret(): string {
+  const value = process.env.JWT_SECRET;
+
+  if (!value) {
+    throw new Error('JWT_SECRET is required');
+  }
+
+  return value;
+}
+
+const jwtSecret = getJwtSecret();
+
 @Module({
   imports: [
     PrismaModule,
     MailModule,
     PassportModule,
     JwtModule.register({
-      secret: process.env.JWT_SECRET || 'change-me',
+      secret: jwtSecret,
       signOptions: { expiresIn: '15m' },
     }),
   ],

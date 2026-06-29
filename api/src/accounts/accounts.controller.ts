@@ -20,23 +20,26 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 
 /** Helper: opções de cookie de acordo com o ambiente */
 function cookieOptsForEnv() {
-  // CORRIGIDO: NODE_ENV deve ser comparado com 'production' para verificar se é ambiente de produção.
+  // Produção: cookies seguros (HTTPS).
   const isProd = process.env.NODE_ENV === 'production';
 
-  // Se front e API estiverem em origens diferentes em produção, use SameSite=None + Secure
+  // Quando frontend e API estão em domínios diferentes
+  // (ex.: Vercel + Render), o navegador exige:
+  // SameSite=None e Secure=true.
   const crossSite = process.env.CROSS_SITE_COOKIES === 'true';
 
-  // NOVO: Lê o domínio do cookie da variável de ambiente COOKIE_DOMAIN
-  // Isso permite que o cookie seja compartilhado entre subdomínios (ex: .onrender.com)
+  // Opcional. Defina apenas se precisar compartilhar o cookie
+  // entre subdomínios (ex.: .example.com).
+  // Para a maioria dos deploys, deixe vazio.
   const cookieDomain = process.env.COOKIE_DOMAIN || undefined;
 
   return {
     httpOnly: true,
     path: '/',
-    maxAge: 1000 * 60 * 60 * 8, // 8h
+    maxAge: 1000 * 60 * 60 * 8, // 8 horas
     sameSite: crossSite ? ('none' as const) : ('lax' as const),
-    secure: crossSite ? true : isProd, // SameSite=None exige secure:true
-    domain: cookieDomain, // <<<< Esta linha CRÍTICA adiciona o atributo Domain ao cookie
+    secure: crossSite ? true : isProd,
+    domain: cookieDomain,
   };
 }
 

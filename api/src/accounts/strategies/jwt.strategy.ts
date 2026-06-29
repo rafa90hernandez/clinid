@@ -35,28 +35,41 @@ function tokenFromBearer(req: Request): string | null {
   return auth.startsWith('Bearer ') ? auth.slice(7) : null;
 }
 
-/** Extractor final: Cookie → Bearer */
+/**
+ * JWT extractor.
+ * Prioriza o cookie HttpOnly (fluxo principal da aplicação).
+ * Mantém suporte ao Bearer Token para compatibilidade com clientes externos
+ * e testes da API.
+ */
 function jwtExtractor(req: Request): string | null {
   return tokenFromCookieHeader(req) ?? tokenFromBearer(req);
 }
 
+function getJwtSecret(): string {
+  const value = process.env.JWT_SECRET;
+
+  if (!value) {
+    throw new Error('JWT_SECRET is required');
+  }
+
+  return value;
+}
+
+const jwtSecret = getJwtSecret();
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(private readonly accounts: AccountsService) {
     super({
       jwtFromRequest: jwtExtractor,
       ignoreExpiration: false,
-      secretOrKey: process.env.JWT_SECRET ?? 'change-me',
+      secretOrKey: jwtSecret,
     });
   }
 
-  // ✅ Retorna LocalUser para casar com AccountsService.me
   async validate(payload: JwtPayload): Promise<LocalUser> {
-    // garante que o usuário existe (auditoria/segurança)
     const exists = await this.accounts.findPublicById(payload.sub);
     if (!exists) throw new UnauthorizedException('User not found');
 
-    // o objeto abaixo vira req.user
     return { sub: payload.sub, email: payload.email };
   }
 }

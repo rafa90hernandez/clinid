@@ -32,12 +32,7 @@ export default function LoginPage() {
           { withAuth: false },
         );
 
-        if (resp?.access_token) {
-          localStorage.setItem('token', resp.access_token);
-        } else {
-          localStorage.setItem('logged_in', '1');
-        }
-
+        localStorage.setItem('logged_in', '1');
         router.replace('/');
       } catch (err: unknown) {
         const message =
