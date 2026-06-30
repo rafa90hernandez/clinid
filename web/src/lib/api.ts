@@ -1,7 +1,7 @@
 // web/src/lib/api.ts
 
 export const TOKEN_STORAGE_KEY = 'token';
-export const API_URL = process.env.NEXT_PUBLIC_API_URL || '/api';
+export const API_URL = '/api';
 
 export type JsonValue =
   | string
