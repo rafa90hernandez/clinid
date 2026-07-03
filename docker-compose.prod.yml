@@ -20,9 +20,9 @@ services:
     environment:
       NODE_ENV: production
       PORT: "3001"
-      DATABASE_URL: postgres://clinid:clinid@db:5432/clinid
-      JWT_SECRET: ${JWT_SECRET:-change-me}
-      WEB_BASE_URL: http://localhost
+      DATABASE_URL: postgresql://clinid:clinid@db:5432/clinid?schema=public
+      JWT_SECRET: ${JWT_SECRET}
+      WEB_BASE_URL: https://clinid.vercel.app
     depends_on: [db]
     networks: [app]
 

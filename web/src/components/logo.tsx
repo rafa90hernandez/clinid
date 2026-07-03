@@ -1,6 +1,6 @@
 'use client';
 import Image from 'next/image';
-import logoPng from '@/../public/logo.png';
+import logoPng from '@/../public/logo-clinid.png';
 
 export function Logo({ className = '' }: { className?: string }) {
   return (
